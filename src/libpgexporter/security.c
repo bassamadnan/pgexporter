@@ -788,7 +788,7 @@ generate_md5(char* str, int length, char** md5)
 }
 
 static int
-client_scram256(SSL* c_ssl, int client_fd, char* username, char* password, int slot)
+client_scram256(SSL* c_ssl, int client_fd, char* username __attribute__((unused)), char* password, int slot)
 {
    int status;
    time_t start_time;
@@ -1914,7 +1914,7 @@ sasl_prep(char* password, char** password_prep)
    char* p = NULL;
 
    /* Only support ASCII for now */
-   for (int i = 0; i < strlen(password); i++)
+   for (size_t i = 0; i < strlen(password); i++)
    {
       if ((unsigned char)(*(password + i)) & 0x80)
       {
@@ -2103,7 +2103,7 @@ client_proof(char* password, char* salt, int salt_length, int iterations,
    }
 
    /* ClientProof: ClientKey XOR ClientSignature */
-   for (int i = 0; i < size; i++)
+   for (size_t i = 0; i < size; i++)
    {
       *(r + i) = *(c_k + i) ^ *(c_s + i);
    }
@@ -2213,7 +2213,7 @@ salted_password(char* password, char* salt, int salt_length, int iterations, uns
          goto error;
       }
 
-      for (int j = 0; j < size; j++)
+      for (size_t j = 0; j < size; j++)
       {
          *(r + j) ^= *(Ui + j);
       }
@@ -2752,7 +2752,7 @@ pgexporter_extract_server_parameters(struct deque** server_parameters)
          data = &security_messages[i][0];
          offset = 0;
 
-         while (offset < data_length)
+         while (offset < (size_t) data_length)
          {
             offset = pgexporter_extract_message_offset(offset, data, &msg);
             if (msg->kind == 'S')
