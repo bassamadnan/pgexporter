@@ -1978,33 +1978,33 @@ pgexporter_conf_set(SSL* ssl __attribute__((unused)), int client_fd, uint8_t com
       }
       else if (!strcmp(key, "metrics_ca_file"))
       {
-            max = strlen(config_value);
-            if (max > MISC_LENGTH - 1)
-            {
-               max = MISC_LENGTH - 1;
-            }
-            memcpy(config->metrics_ca_file, config_value, max);
-            pgexporter_json_put(response, key, (uintptr_t)config->metrics_ca_file, ValueString);
+         max = strlen(config_value);
+         if (max > MISC_LENGTH - 1)
+         {
+            max = MISC_LENGTH - 1;
+         }
+         memcpy(config->metrics_ca_file, config_value, max);
+         pgexporter_json_put(response, key, (uintptr_t)config->metrics_ca_file, ValueString);
       }
       else if (!strcmp(key, "metrics_cert_file"))
       {
-            max = strlen(config_value);
-            if (max > MISC_LENGTH - 1)
-            {
-               max = MISC_LENGTH - 1;
-            }
-            memcpy(config->metrics_cert_file, config_value, max);
-            pgexporter_json_put(response, key, (uintptr_t)config->metrics_cert_file, ValueString);
+         max = strlen(config_value);
+         if (max > MISC_LENGTH - 1)
+         {
+            max = MISC_LENGTH - 1;
+         }
+         memcpy(config->metrics_cert_file, config_value, max);
+         pgexporter_json_put(response, key, (uintptr_t)config->metrics_cert_file, ValueString);
       }
       else if (!strcmp(key, "metrics_key_file"))
       {
-            max = strlen(config_value);
-            if (max > MISC_LENGTH - 1)
-            {
-               max = MISC_LENGTH - 1;
-            }
-            memcpy(config->metrics_key_file, config_value, max);
-            pgexporter_json_put(response, key, (uintptr_t)config->metrics_key_file, ValueString);
+         max = strlen(config_value);
+         if (max > MISC_LENGTH - 1)
+         {
+            max = MISC_LENGTH - 1;
+         }
+         memcpy(config->metrics_key_file, config_value, max);
+         pgexporter_json_put(response, key, (uintptr_t)config->metrics_key_file, ValueString);
       }
       else if (!strcmp(key, "blocking_timeout"))
       {
