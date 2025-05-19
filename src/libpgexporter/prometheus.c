@@ -122,6 +122,7 @@ static void add_column_to_store(column_store_t* store, int n_store, char* data, 
 
 static void general_information(SSL* client_ssl, int client_fd);
 static void core_information(SSL* client_ssl, int client_fd);
+static void extension_list_information(SSL* client_ssl, int client_fd);
 static void extension_information(SSL* client_ssl, int client_fd);
 static void extension_function(SSL* client_ssl, int client_fd, char* function, int input, char* description, char* type);
 static void server_information(SSL* client_ssl, int client_fd);
@@ -684,6 +685,7 @@ retry_cache_locking:
          primary_information(client_ssl, client_fd);
          settings_information(client_ssl, client_fd);
          extension_information(client_ssl, client_fd);
+         extension_list_information(client_ssl, client_fd);
 
          custom_metrics(client_ssl, client_fd);
 
@@ -1180,6 +1182,87 @@ extension_information(SSL* client_ssl, int client_fd)
          query = NULL;
       }
    }
+}
+
+static void
+extension_list_information(SSL* client_ssl, int client_fd)
+{
+   int ret;
+   int server;
+   char* data = NULL;
+   char* safe_key1 = NULL;
+   char* safe_key2 = NULL;
+   struct query* all = NULL;
+   struct query* query = NULL;
+   struct tuple* current = NULL;
+   struct configuration* config;
+
+   config = (struct configuration*)shmem;
+
+   /* Expose only if default or specified */
+   if (!collector_pass("extensions_list"))
+   {
+      return;
+   }
+
+   for (server = 0; server < config->number_of_servers; server++)
+   {
+      if (config->servers[server].fd != -1)
+      {
+         ret = pgexporter_query_extensions_list(server, &query);
+         if (ret == 0)
+         {
+            all = pgexporter_merge_queries(all, query, SORT_NAME);
+         }
+         query = NULL;
+      }
+   }
+
+   if (all != NULL)
+   {
+      current = all->tuples;
+      if (current != NULL)
+      {
+         data = pgexporter_vappend(data, 2,
+                                   "#HELP pgexporter_postgresql_extension_info Information about installed PostgreSQL extensions\n",
+                                   "#TYPE pgexporter_postgresql_extension_info gauge\n"
+                                   );
+
+         while (current != NULL)
+         {
+            safe_key1 = safe_prometheus_key(pgexporter_get_column(0, current)); /* corresponding to the name of extension */
+            safe_key2 = safe_prometheus_key(pgexporter_get_column(1, current)); /* version installed */
+
+            data = pgexporter_vappend(data, 8,
+                                      "pgexporter_postgresql_extension_info{server=\"",
+                                      &config->servers[current->server].name[0],
+                                      "\",extension=\"",
+                                      safe_key1,
+                                      "\",version=\"",
+                                      safe_key2,
+                                      "\"} ",
+                                      "1\n"
+                                      );
+
+            safe_prometheus_key_free(safe_key1);
+            safe_prometheus_key_free(safe_key2);
+
+            current = current->next;
+         }
+
+         data = pgexporter_append(data, "\n");
+
+         if (data != NULL)
+         {
+            send_chunk(client_ssl, client_fd, data);
+            metrics_cache_append(data);
+            free(data);
+            data = NULL;
+         }
+      }
+   }
+
+   pgexporter_free_query(all);
 }
 
 static void

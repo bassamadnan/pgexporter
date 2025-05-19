@@ -289,6 +289,17 @@ pgexporter_query_database_size(int server, struct query** query)
 }
 
 int
+pgexporter_query_extensions_list(int server, struct query** query)
+{
+   return query_execute(server, "SELECT name, installed_version "
+                        "FROM pg_available_extensions "
+                        "WHERE installed_version IS NOT NULL "
+                        "ORDER BY name;",
+                        "pg_extensions_list",
+                        2, NULL, query);
+}
+
+int
 pgexporter_query_replication_slot_active(int server, struct query** query)
 {
    return query_execute(server, "SELECT slot_name,active FROM pg_replication_slots;",
