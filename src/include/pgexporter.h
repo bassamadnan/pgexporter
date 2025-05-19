@@ -70,6 +70,7 @@ extern "C" {
 #define NUMBER_OF_METRICS     256
 #define NUMBER_OF_COLLECTORS  256
 #define NUMBER_OF_ENDPOINTS    32
+#define NUMBER_OF_EXTENSIONS   64
 
 #define STATE_FREE        0
 #define STATE_IN_USE      1
@@ -318,6 +319,17 @@ struct prometheus
    struct query_alts* root;                        /**< Root of the Query Alternatives' AVL Tree */
 } __attribute__ ((aligned (64)));
 
+/** @struct extension_info
+ * Defines information about a PostgreSQL extension
+ */
+struct extension_info
+{
+   char name[MISC_LENGTH];              /**< The extension name */
+   char installed_version[MISC_LENGTH]; /**< The installed version */
+   int server;                          /**< The server index */
+   bool enabled;                        /**< Is extension enabled */
+} __attribute__ ((aligned (64)));
+
 /** @struct endpoint
  * Defines a Prometheus endpoint
  */
@@ -389,6 +401,7 @@ struct configuration
    int number_of_metrics;        /**< The number of metrics*/
    int number_of_collectors;     /**< Number of total collectors */
    int number_of_endpoints;      /**< The number of endpoints */
+   int number_of_extensions;     /**< The number of extensions */
 
    char metrics_path[MAX_PATH]; /**< The metrics path */
 
@@ -403,6 +416,7 @@ struct configuration
    struct user admins[NUMBER_OF_ADMINS];                        /**< The admins */
    struct prometheus prometheus[NUMBER_OF_METRICS];             /**< The Prometheus metrics */
    struct endpoint endpoints[NUMBER_OF_ENDPOINTS];              /**< The Prometheus metrics */
+   struct extension_info extensions[NUMBER_OF_EXTENSIONS];      /**< The extensions */
 } __attribute__((aligned(64)));
 
 #ifdef __cplusplus

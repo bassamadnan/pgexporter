@@ -48,6 +48,58 @@ static int get_number_of_columns(struct message* msg);
 static int get_column_name(struct message* msg, int index, char** name);
 static int process_server_parameters(int server, struct deque* server_parameters);
 
+static int
+pgexporter_detect_extensions(int server)
+{
+   int ret;
+   struct query* query = NULL;
+   struct tuple* current = NULL;
+   struct configuration* config;
+   int extension_idx;
+
+   config = (struct configuration*)shmem;
+
+   /* Query for installed extensions */
+   ret = pgexporter_query_extensions_list(server, &query);
+   if (ret != 0)
+   {
+      pgexporter_log_warn("Failed to detect extensions for server %s", config->servers[server].name);
+      return 1;
+   }
+
+   current = query->tuples;
+   while (current != NULL)
+   {
+      /* Check if we have space for another extension */
+      if (config->number_of_extensions >= NUMBER_OF_EXTENSIONS)
+      {
+         pgexporter_log_warn("Maximum number of extensions reached (%d)", NUMBER_OF_EXTENSIONS);
+         pgexporter_free_query(query);
+         return 1;
+      }
+
+      extension_idx = config->number_of_extensions;
+
+      /* Store extension information */
+      strncpy(config->extensions[extension_idx].name,
+              pgexporter_get_column(0, current),
+              MISC_LENGTH - 1);
+
+      strncpy(config->extensions[extension_idx].installed_version,
+              pgexporter_get_column(1, current),
+              MISC_LENGTH - 1);
+
+      config->extensions[extension_idx].server = server;
+      config->extensions[extension_idx].enabled = true;
+
+      config->number_of_extensions++;
+      current = current->next;
+   }
+
+   pgexporter_free_query(query);
+   return 0;
+}
+
 void
 pgexporter_open_connections(void)
 {
@@ -94,6 +146,17 @@ pgexporter_open_connections(void)
             {
                process_server_parameters(server, server_parameters);
                pgexporter_deque_destroy(server_parameters);
+            }
+            pgexporter_detect_extensions(server);
+            printf("Server %s: Detected extensions:\n", config->servers[server].name);
+            for (int i = 0; i < config->number_of_extensions; i++)
+            {
+               if (config->extensions[i].server == server)
+               {
+                  printf("  - %s (version %s)\n",
+                         config->extensions[i].name,
+                         config->extensions[i].installed_version);
+               }
             }
          }
          else
