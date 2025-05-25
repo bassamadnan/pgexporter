@@ -326,6 +326,7 @@ struct extension_info
 {
    char name[MISC_LENGTH];              /**< The extension name */
    char installed_version[MISC_LENGTH]; /**< The installed version */
+   char comment[MISC_LENGTH];           /**< The extension description/comment */
    int server;                          /**< The server index */
    bool enabled;                        /**< Is extension enabled */
 } __attribute__ ((aligned (64)));

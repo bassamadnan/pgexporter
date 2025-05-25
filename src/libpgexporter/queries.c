@@ -89,6 +89,10 @@ pgexporter_detect_extensions(int server)
               pgexporter_get_column(1, current),
               MISC_LENGTH - 1);
 
+      strncpy(config->extensions[extension_idx].comment,
+              pgexporter_get_column(2, current),
+              MISC_LENGTH - 1);
+
       config->extensions[extension_idx].server = server;
       config->extensions[extension_idx].enabled = true;
 
@@ -153,9 +157,10 @@ pgexporter_open_connections(void)
             {
                if (config->extensions[i].server == server)
                {
-                  printf("  - %s (version %s)\n",
+                  printf("  - %s (version %s)  Description: %s\n",
                          config->extensions[i].name,
-                         config->extensions[i].installed_version);
+                         config->extensions[i].installed_version,
+                         config->extensions[i].comment);
                }
             }
          }
@@ -354,12 +359,12 @@ pgexporter_query_database_size(int server, struct query** query)
 int
 pgexporter_query_extensions_list(int server, struct query** query)
 {
-   return query_execute(server, "SELECT name, installed_version "
+   return query_execute(server, "SELECT name, installed_version, comment "
                         "FROM pg_available_extensions "
                         "WHERE installed_version IS NOT NULL "
                         "ORDER BY name;",
                         "pg_extensions_list",
-                        2, NULL, query);
+                        3, NULL, query);
 }
 
 int
