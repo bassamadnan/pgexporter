@@ -88,6 +88,11 @@ extern "C" {
 #define HUGEPAGE_TRY 1
 #define HUGEPAGE_ON  2
 
+#define VERSION_GREATER  1
+#define VERSION_EQUAL    0
+#define VERSION_LESS    -1
+#define VERSION_ERROR   -2
+
 #define MAX_QUERY_LENGTH      2048
 #define MAX_COLLECTOR_LENGTH  1024
 
@@ -231,10 +236,10 @@ struct version
 struct extension_info
 {
    char name[MISC_LENGTH];              /**< The extension name */
-   char installed_version[MISC_LENGTH]; /**< The installed version */
    char comment[MISC_LENGTH];           /**< The extension description/comment */
    int server;                          /**< The server index */
    bool enabled;                        /**< Is extension enabled */
+   struct version installed_version;    /**< The installed version */
 } __attribute__ ((aligned (64)));
 
 /** @struct server
@@ -371,6 +376,16 @@ struct prometheus
    struct ext_query_alts* ext_root;                /**< Root of the Query Alternatives' AVL Tree for PostgreSQL extension queries*/
 } __attribute__ ((aligned (64)));
 
+/** @struct extension_metrics
+ * Metrics for a single extension
+ */
+struct extension_metrics
+{
+   char extension_name[MISC_LENGTH];                            /**< Extension name (e.g., "pg_stat_statements") */
+   int number_of_metrics;                                       /**< Number of metrics for this extension */
+   struct prometheus metrics[NUMBER_OF_METRICS];                /**< The actual metrics for this extension */
+} __attribute__ ((aligned (64)));
+
 /** @struct endpoint
  * Defines a Prometheus endpoint
  */
@@ -442,6 +457,7 @@ struct configuration
    int number_of_metrics;        /**< The number of metrics*/
    int number_of_collectors;     /**< Number of total collectors */
    int number_of_endpoints;      /**< The number of endpoints */
+   int number_of_extensions;     /**< Number of loaded extensions */
 
    char metrics_path[MAX_PATH]; /**< The metrics path */
 
@@ -456,6 +472,7 @@ struct configuration
    struct user admins[NUMBER_OF_ADMINS];                        /**< The admins */
    struct prometheus prometheus[NUMBER_OF_METRICS];             /**< The Prometheus metrics */
    struct endpoint endpoints[NUMBER_OF_ENDPOINTS];              /**< The Prometheus metrics */
+   struct extension_metrics extensions[NUMBER_OF_EXTENSIONS];   /**< Extension metrics by extension */
 } __attribute__((aligned(64)));
 
 #ifdef __cplusplus

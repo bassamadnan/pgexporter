@@ -36,6 +36,7 @@
 #include <prometheus.h>
 #include <queries.h>
 #include <query_alts.h>
+#include <query_alts_ext.h>
 #include <security.h>
 #include <shmem.h>
 #include <utils.h>
@@ -131,6 +132,7 @@ static void uptime_information(SSL* client_ssl, int client_fd);
 static void primary_information(SSL* client_ssl, int client_fd);
 static void settings_information(SSL* client_ssl, int client_fd);
 static void custom_metrics(SSL* client_ssl, int client_fd); // Handles custom metrics provided in YAML format, both internal and external
+static void extension_metrics(SSL* client_ssl, int client_fd);
 static void append_help_info(char** data, char* tag, char* name, char* description);
 static void append_type_info(char** data, char* tag, char* name, int typeId);
 
@@ -688,6 +690,7 @@ retry_cache_locking:
          extension_list_information(client_ssl, client_fd);
 
          custom_metrics(client_ssl, client_fd);
+         extension_metrics(client_ssl, client_fd);
 
          pgexporter_close_connections();
 
@@ -1212,7 +1215,7 @@ extension_list_information(SSL* client_ssl, int client_fd)
          for (int i = 0; i < config->servers[server].number_of_extensions; i++)
          {
             safe_key1 = safe_prometheus_key(config->servers[server].extensions[i].name);
-            safe_key2 = safe_prometheus_key(config->servers[server].extensions[i].installed_version);
+            safe_key2 = safe_prometheus_key(config->servers[server].extensions[i].name);
             safe_key3 = safe_prometheus_key(config->servers[server].extensions[i].comment);
 
             data = pgexporter_vappend(data, 10,
@@ -1529,6 +1532,175 @@ data:
    }
 
    pgexporter_free_query(all);
+}
+
+static void
+extension_metrics(SSL* client_ssl, int client_fd)
+{
+   struct configuration* config = NULL;
+   char* data = NULL;
+
+   config = (struct configuration*)shmem;
+
+   query_list_t* ext_q_list = NULL;
+   query_list_t* ext_temp = NULL;
+
+   for (int server = 0; server < config->number_of_servers; server++)
+   {
+      if (config->servers[server].fd == -1)
+      {
+         continue;
+      }
+
+      for (int ext_idx = 0; ext_idx < config->servers[server].number_of_extensions; ext_idx++)
+      {
+         struct extension_info* ext_info = &config->servers[server].extensions[ext_idx];
+
+         if (!ext_info->enabled)
+         {
+            continue;
+         }
+
+         struct extension_metrics* ext_metrics = NULL;
+         for (int i = 0; i < config->number_of_extensions; i++)
+         {
+            if (!strcmp(config->extensions[i].extension_name, ext_info->name))
+            {
+               ext_metrics = &config->extensions[i];
+               break;
+            }
+         }
+
+         if (!ext_metrics)
+         {
+            continue;
+         }
+
+         for (int metric_idx = 0; metric_idx < ext_metrics->number_of_metrics; metric_idx++)
+         {
+            struct prometheus* prom = &ext_metrics->metrics[metric_idx];
+
+            if (!collector_pass(prom->collector))
+            {
+               continue;
+            }
+
+            if ((prom->server_query_type == SERVER_QUERY_PRIMARY && config->servers[server].state != SERVER_PRIMARY) ||
+                (prom->server_query_type == SERVER_QUERY_REPLICA && config->servers[server].state != SERVER_REPLICA))
+            {
+               continue;
+            }
+
+            struct ext_query_alts* query_alt = pgexporter_get_extension_query_alt(prom->ext_root, &ext_info->installed_version);
+
+            if (!query_alt)
+            {
+               continue;
+            }
+
+            query_list_t* next = malloc(sizeof(query_list_t));
+            memset(next, 0, sizeof(query_list_t));
+
+            if (!ext_q_list)
+            {
+               ext_q_list = next;
+               ext_temp = ext_q_list;
+            }
+            else if (ext_temp && ext_temp->query)
+            {
+               ext_temp->next = next;
+               ext_temp = next;
+            }
+            else if (ext_temp && !ext_temp->query)
+            {
+               free(next);
+               next = NULL;
+               memset(ext_temp, 0, sizeof(query_list_t));
+            }
+
+            char** names = malloc(query_alt->node.n_columns * sizeof(char*));
+            for (int j = 0; j < query_alt->node.n_columns; j++)
+            {
+               names[j] = query_alt->node.columns[j].name;
+            }
+            memcpy(ext_temp->tag, prom->tag, MISC_LENGTH);
+            ext_temp->query_alt = (struct pg_query_alts*)query_alt;
+
+            if (query_alt->node.is_histogram)
+            {
+               ext_temp->error = pgexporter_custom_query(server, query_alt->node.query, prom->tag, -1, NULL, &ext_temp->query);
+               ext_temp->sort_type = prom->sort_type;
+            }
+            else
+            {
+               ext_temp->error = pgexporter_custom_query(server, query_alt->node.query, prom->tag, query_alt->node.n_columns, names, &ext_temp->query);
+               ext_temp->sort_type = prom->sort_type;
+            }
+
+            free(names);
+            names = NULL;
+         }
+      }
+   }
+
+   ext_temp = ext_q_list;
+   column_store_t ext_store[MISC_LENGTH] = {0};
+   int ext_n_store = 0;
+
+   while (ext_temp)
+   {
+      if (ext_temp->error || (ext_temp->query != NULL && ext_temp->query->tuples != NULL))
+      {
+         if (ext_temp->query_alt->node.is_histogram)
+         {
+            handle_histogram(ext_store, &ext_n_store, ext_temp);
+         }
+         else
+         {
+            handle_gauge_counter(ext_store, &ext_n_store, ext_temp);
+         }
+      }
+      ext_temp = ext_temp->next;
+   }
+
+   for (int i = 0; i < ext_n_store; i++)
+   {
+      column_node_t* temp = ext_store[i].columns;
+      column_node_t* last = NULL;
+
+      while (temp)
+      {
+         data = pgexporter_append(data, temp->data);
+         last = temp;
+         temp = temp->next;
+
+         free(last->data);
+         free(last);
+      }
+      data = pgexporter_append(data, "\n");
+   }
+
+   if (data)
+   {
+      send_chunk(client_ssl, client_fd, data);
+      metrics_cache_append(data);
+      free(data);
+      data = NULL;
+   }
+
+   ext_temp = ext_q_list;
+   query_list_t* ext_last = NULL;
+   while (ext_temp)
+   {
+      pgexporter_free_query(ext_temp->query);
+
+      ext_last = ext_temp;
+      ext_temp = ext_temp->next;
+      ext_last->next = NULL;
+
+      free(ext_last);
+   }
+   ext_q_list = NULL;
 }
 
 static void
