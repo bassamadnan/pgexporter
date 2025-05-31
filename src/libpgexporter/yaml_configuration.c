@@ -1139,50 +1139,50 @@ semantics_yaml(struct prometheus* prometheus, int prometheus_idx, yaml_config_t*
       for (int j = 0; j < yaml_config->metrics[i].n_queries; j++)
       {
 
-         struct query_alts* new_query = NULL;
+         struct pg_query_alts* new_query = NULL;
          void* new_query_shmem = NULL;
 
-         pgexporter_create_shared_memory(sizeof(struct query_alts), HUGEPAGE_OFF, &new_query_shmem);
-         new_query = (struct query_alts*) new_query_shmem;
+         pgexporter_create_shared_memory(sizeof(struct pg_query_alts), HUGEPAGE_OFF, &new_query_shmem);
+         new_query = (struct pg_query_alts*) new_query_shmem;
 
-         new_query->n_columns = MIN(yaml_config->metrics[i].queries[j].n_columns, MAX_NUMBER_OF_COLUMNS);
+         new_query->node.n_columns = MIN(yaml_config->metrics[i].queries[j].n_columns, MAX_NUMBER_OF_COLUMNS);
 
-         memcpy(new_query->query, yaml_config->metrics[i].queries[j].query, MIN(MAX_QUERY_LENGTH - 1, strlen(yaml_config->metrics[i].queries[j].query)));
-         new_query->version = yaml_config->metrics[i].queries[j].version;
+         memcpy(new_query->node.query, yaml_config->metrics[i].queries[j].query, MIN(MAX_QUERY_LENGTH - 1, strlen(yaml_config->metrics[i].queries[j].query)));
+         new_query->pg_version = yaml_config->metrics[i].queries[j].version;
 
          // Columns
-         for (int k = 0; k < new_query->n_columns; k++)
+         for (int k = 0; k < new_query->node.n_columns; k++)
          {
 
             // Name
             if (yaml_config->metrics[i].queries[j].columns[k].name)
             {
-               memcpy(new_query->columns[k].name, yaml_config->metrics[i].queries[j].columns[k].name, MIN(MISC_LENGTH - 1, strlen(yaml_config->metrics[i].queries[j].columns[k].name)));
+               memcpy(new_query->node.columns[k].name, yaml_config->metrics[i].queries[j].columns[k].name, MIN(MISC_LENGTH - 1, strlen(yaml_config->metrics[i].queries[j].columns[k].name)));
             }
 
             // Description
             if (yaml_config->metrics[i].queries[j].columns[k].description)
             {
-               memcpy(new_query->columns[k].description, yaml_config->metrics[i].queries[j].columns[k].description, MIN(MISC_LENGTH - 1, strlen(yaml_config->metrics[i].queries[j].columns[k].description)));
+               memcpy(new_query->node.columns[k].description, yaml_config->metrics[i].queries[j].columns[k].description, MIN(MISC_LENGTH - 1, strlen(yaml_config->metrics[i].queries[j].columns[k].description)));
             }
 
             // Type
             if (!strcmp(yaml_config->metrics[i].queries[j].columns[k].type, "label"))
             {
-               new_query->columns[k].type = LABEL_TYPE;
+               new_query->node.columns[k].type = LABEL_TYPE;
             }
             else if (!strcmp(yaml_config->metrics[i].queries[j].columns[k].type, "counter"))
             {
-               new_query->columns[k].type = COUNTER_TYPE;
+               new_query->node.columns[k].type = COUNTER_TYPE;
             }
             else if (!strcmp(yaml_config->metrics[i].queries[j].columns[k].type, "gauge"))
             {
-               new_query->columns[k].type = GAUGE_TYPE;
+               new_query->node.columns[k].type = GAUGE_TYPE;
             }
             else if (!strcmp(yaml_config->metrics[i].queries[j].columns[k].type, "histogram"))
             {
-               new_query->columns[k].type = HISTOGRAM_TYPE;
-               new_query->is_histogram = true;
+               new_query->node.columns[k].type = HISTOGRAM_TYPE;
+               new_query->node.is_histogram = true;
             }
             else
             {
@@ -1195,10 +1195,10 @@ semantics_yaml(struct prometheus* prometheus, int prometheus_idx, yaml_config_t*
 
          if (yaml_config->metrics[i].queries[j].version == 0)
          {
-            new_query->version = yaml_config->default_version;
+            new_query->pg_version = yaml_config->default_version;
          }
 
-         prom->root = pgexporter_insert_node_avl(prom->root, &new_query);
+         prom->pg_root = pgexporter_insert_node_avl(prom->pg_root, &new_query);
       }
    }
 

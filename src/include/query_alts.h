@@ -46,19 +46,19 @@
  * @brief Get the query alternative for a given server version
  * @param root Root of the AVL tree
  * @param server Server's major version
- * @return query_alts* NULL if not supported, otherwise a valid pointer
+ * @return pg_query_alts* NULL if not supported, otherwise a valid pointer
  */
-struct query_alts*
-pgexporter_get_query_alt(struct query_alts* root, int server);
+struct pg_query_alts*
+pgexporter_get_query_alt(struct pg_query_alts* root, int server);
 
 /**
  * @brief Insert a node `new_node` into the AVL tree `root`
  * @param root Root of the AVL tree
  * @param new_node New node to add (Memory is free'd if node is not used)
- * @return query_alts* Returns root of AVL Tree. Can ignore.
+ * @return pg_query_alts* Returns root of AVL Tree. Can ignore.
  */
-struct query_alts*
-pgexporter_insert_node_avl (struct query_alts* root, struct query_alts** new_node);
+struct pg_query_alts*
+pgexporter_insert_node_avl (struct pg_query_alts* root, struct pg_query_alts** new_node);
 
 /**
  * @brief Copy query alternative from `src` to `dst`
@@ -66,7 +66,7 @@ pgexporter_insert_node_avl (struct query_alts* root, struct query_alts** new_nod
  * @param src Source
  */
 void
-pgexporter_copy_query_alts(struct query_alts** dst, struct query_alts* src);
+pgexporter_copy_query_alts(struct pg_query_alts** dst, struct pg_query_alts* src);
 
 /**
  * @brief Free the Query Alternatives of a configuration
@@ -80,4 +80,4 @@ pgexporter_free_query_alts(struct configuration* config);
  * @param root Root of the AVL tree
  */
 void
-pgexporter_free_node_avl(struct query_alts** root);
+pgexporter_free_node_avl(struct pg_query_alts** root);

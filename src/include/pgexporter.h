@@ -214,6 +214,17 @@ extern void* bridge_cache_shmem;
  */
 extern void* bridge_json_cache_shmem;
 
+/**
+ * @struct version
+ * Semantic version structure for extensions (major.minor.patch format)
+ */
+struct version
+{
+   int major;     /**< Major version number */
+   int minor;     /**< Minor version number (-1 if not specified) */
+   int patch;     /**< Patch version number (-1 if not specified) */
+} __attribute__ ((aligned (64)));
+
 /** @struct extension_info
  * Defines information about a PostgreSQL extension
  */
@@ -293,9 +304,9 @@ struct column
 } __attribute__ ((aligned (64)));
 
 /**
- * @struct query_alts
- * A node in an AVL tree. This structure holds information about a query
- * alternative.
+ * @struct query_alts_base
+ * Base structure containing common fields for query alternatives.
+ * Shared by both PostgreSQL and extension query types.
  *
  * Query Alternatives are alternative versions of queries with a PostgreSQL
  * version attached that will support the entire query. Ideally it should be the
@@ -306,19 +317,45 @@ struct column
  * the requesting server with version 'u' if 'u' >= 'v' and there doesn't exist
  * another node in the same AVL tree with a version 'w' where 'u' >= 'w'.
  */
-struct query_alts
+struct query_alts_base
 {
-   char version;                                   /**< Minimum required version to run query */
    char query[MAX_QUERY_LENGTH];                   /**< Query String */
    struct column columns[MAX_NUMBER_OF_COLUMNS];   /**< Columns of query */
    int n_columns;                                  /**< No. of columns */
    bool is_histogram;                              /**< Is the query for a histogram metric */
 
-   /* AVL Tree */
-   unsigned int height;       /**< Node's height, 1 if leaf, 0 if NULL */
-   struct query_alts* left;   /**< Left child node */
-   struct query_alts* right;  /**< Right child node */
+} __attribute__ ((aligned (64)));
 
+/**
+ * @struct pg_query_alts
+ * A node in an AVL tree for PostgreSQL-specific query alternatives.
+ * Contains version information and inherits common query fields.
+ */
+struct pg_query_alts
+{
+   char pg_version;               /**< Minimum required postgres version to run query */
+   struct query_alts_base node;   /**< Inherit base fields */
+
+   /* AVL Tree */
+   unsigned int height;          /**< Node's height, 1 if leaf, 0 if NULL */
+   struct pg_query_alts* left;   /**< Left child node */
+   struct pg_query_alts* right;  /**< Right child node */
+} __attribute__ ((aligned (64)));
+
+/**
+ * @struct ext_query_alts
+ * A node in an AVL tree for extension-specific query alternatives.
+ * Contains semantic version information and inherits common query fields.
+ */
+struct ext_query_alts
+{
+   struct version ext_version;    /**< Extension semantic version */
+   struct query_alts_base node;   /**< Inherit base fields */
+
+   /* AVL Tree */
+   unsigned int height;           /**< Node's height, 1 if leaf, 0 if NULL */
+   struct ext_query_alts* left;   /**< Left child node */
+   struct ext_query_alts* right;  /**< Right child node */
 } __attribute__ ((aligned (64)));
 
 /** @struct prometheus
@@ -330,7 +367,8 @@ struct prometheus
    int sort_type;                                  /**< Sorting type of multi queries 0--SORT_NAME 1--SORT_DATA0 */
    int server_query_type;                          /**< Query type 0--SERVER_QUERY_BOTH 1--SERVER_QUERY_PRIMARY 2--SERVER_QUERY_REPLICA */
    char collector[MAX_COLLECTOR_LENGTH];           /**< Collector Tag for query */
-   struct query_alts* root;                        /**< Root of the Query Alternatives' AVL Tree */
+   struct pg_query_alts* pg_root;                  /**< Root of the Query Alternatives' AVL Tree for PostgreSQL core queries*/
+   struct ext_query_alts* ext_root;                /**< Root of the Query Alternatives' AVL Tree for PostgreSQL extension queries*/
 } __attribute__ ((aligned (64)));
 
 /** @struct endpoint

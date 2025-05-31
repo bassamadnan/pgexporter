@@ -70,7 +70,7 @@ typedef struct query_list
 {
    struct query* query;
    struct query_list* next;
-   struct query_alts* query_alt;
+   struct pg_query_alts* query_alt;
    char tag[MISC_LENGTH];
    int sort_type;
    bool error;
@@ -1569,7 +1569,7 @@ custom_metrics(SSL* client_ssl, int client_fd)
             continue;
          }
 
-         struct query_alts* query_alt = pgexporter_get_query_alt(prom->root, server);
+         struct pg_query_alts* query_alt = pgexporter_get_query_alt(prom->pg_root, server);
 
          if (!query_alt)
          {
@@ -1599,23 +1599,23 @@ custom_metrics(SSL* client_ssl, int client_fd)
          }
 
          /* Names */
-         char** names = malloc(query_alt->n_columns * sizeof(char*));
-         for (int j = 0; j < query_alt->n_columns; j++)
+         char** names = malloc(query_alt->node.n_columns * sizeof(char*));
+         for (int j = 0; j < query_alt->node.n_columns; j++)
          {
-            names[j] = query_alt->columns[j].name;
+            names[j] = query_alt->node.columns[j].name;
          }
          memcpy(temp->tag, prom->tag, MISC_LENGTH);
          temp->query_alt = query_alt;
 
          // Gather all the queries in a linked list, with each query's result (linked list of tuples in it) as a node.
-         if (query_alt->is_histogram)
+         if (query_alt->node.is_histogram)
          {
-            temp->error = pgexporter_custom_query(server, query_alt->query, prom->tag, -1, NULL, &temp->query);
+            temp->error = pgexporter_custom_query(server, query_alt->node.query, prom->tag, -1, NULL, &temp->query);
             temp->sort_type = prom->sort_type;
          }
          else
          {
-            temp->error = pgexporter_custom_query(server, query_alt->query, prom->tag, query_alt->n_columns, names, &temp->query);
+            temp->error = pgexporter_custom_query(server, query_alt->node.query, prom->tag, query_alt->node.n_columns, names, &temp->query);
             temp->sort_type = prom->sort_type;
          }
 
@@ -1633,7 +1633,7 @@ custom_metrics(SSL* client_ssl, int client_fd)
    {
       if (temp->error || (temp->query != NULL && temp->query->tuples != NULL))
       {
-         if (temp->query_alt->is_histogram)
+         if (temp->query_alt->node.is_histogram)
          {
             handle_histogram(store, &n_store, temp);
          }
@@ -1804,9 +1804,9 @@ handle_histogram(column_store_t* store, int* n_store, query_list_t* temp)
    config = (struct configuration*)shmem;
 
    int h_idx = 0;
-   for (; h_idx < temp->query_alt->n_columns; h_idx++)
+   for (; h_idx < temp->query_alt->node.n_columns; h_idx++)
    {
-      if (temp->query_alt->columns[h_idx].type == HISTOGRAM_TYPE)
+      if (temp->query_alt->node.columns[h_idx].type == HISTOGRAM_TYPE)
       {
          break;
       }
@@ -1828,18 +1828,18 @@ handle_histogram(column_store_t* store, int* n_store, query_list_t* temp)
 
    /* generate column names X_sum, X_count, X, X_bucket*/
    names[0] = pgexporter_vappend(names[0], 2,
-                                 temp->query_alt->columns[h_idx].name,
+                                 temp->query_alt->node.columns[h_idx].name,
                                  "_sum"
                                  );
    names[1] = pgexporter_vappend(names[1], 2,
-                                 temp->query_alt->columns[h_idx].name,
+                                 temp->query_alt->node.columns[h_idx].name,
                                  "_count"
                                  );
    names[2] = pgexporter_vappend(names[2], 1,
-                                 temp->query_alt->columns[h_idx].name
+                                 temp->query_alt->node.columns[h_idx].name
                                  );
    names[3] = pgexporter_vappend(names[3], 2,
-                                 temp->query_alt->columns[h_idx].name,
+                                 temp->query_alt->node.columns[h_idx].name,
                                  "_bucket"
                                  );
 
@@ -1848,7 +1848,7 @@ handle_histogram(column_store_t* store, int* n_store, query_list_t* temp)
       if (store[idx].type == HISTOGRAM_TYPE &&
           store[idx].sort_type == temp->sort_type &&
           !strcmp(store[idx].tag, temp->tag) &&
-          !strcmp(store[idx].name, temp->query_alt->columns[h_idx].name))
+          !strcmp(store[idx].name, temp->query_alt->node.columns[h_idx].name))
       {
          break;
       }
@@ -1888,7 +1888,7 @@ append:
                safe_key = safe_prometheus_key(pgexporter_get_column(j, current));
                data = pgexporter_vappend(data, 5,
                                          ",",
-                                         temp->query_alt->columns[j].name,
+                                         temp->query_alt->node.columns[j].name,
                                          "=\"",
                                          safe_key,
                                          "\""
@@ -1917,7 +1917,7 @@ append:
             safe_key = safe_prometheus_key(pgexporter_get_column(j, current));
             data = pgexporter_vappend(data, 5,
                                       ",",
-                                      temp->query_alt->columns[j].name,
+                                      temp->query_alt->node.columns[j].name,
                                       "=\"",
                                       safe_key,
                                       "\""
@@ -1946,7 +1946,7 @@ append:
             safe_key = safe_prometheus_key(pgexporter_get_column(j, current));
             data = pgexporter_vappend(data, 5,
                                       ",",
-                                      temp->query_alt->columns[j].name,
+                                      temp->query_alt->node.columns[j].name,
                                       "=\"",
                                       safe_key,
                                       "\""
@@ -1975,7 +1975,7 @@ append:
             safe_key = safe_prometheus_key(pgexporter_get_column(j, current));
             data = pgexporter_vappend(data, 5,
                                       ",",
-                                      temp->query_alt->columns[j].name,
+                                      temp->query_alt->node.columns[j].name,
                                       "=\"",
                                       safe_key,
                                       "\""
@@ -2019,11 +2019,11 @@ append:
       store[idx].type = HISTOGRAM_TYPE;
       store[idx].sort_type = temp->sort_type;
       memcpy(store[idx].tag, temp->tag, MISC_LENGTH);
-      memcpy(store[idx].name, temp->query_alt->columns[h_idx].name, MISC_LENGTH);
+      memcpy(store[idx].name, temp->query_alt->node.columns[h_idx].name, MISC_LENGTH);
 
       data = NULL;
-      append_help_info(&data, store[idx].tag, "", temp->query_alt->columns[h_idx].description);
-      append_type_info(&data, store[idx].tag, "", temp->query_alt->columns[h_idx].type);
+      append_help_info(&data, store[idx].tag, "", temp->query_alt->node.columns[h_idx].description);
+      append_type_info(&data, store[idx].tag, "", temp->query_alt->node.columns[h_idx].type);
 
       add_column_to_store(store, idx, data, SORT_NAME, NULL);
 
@@ -2049,9 +2049,9 @@ handle_gauge_counter(column_store_t* store, int* n_store, query_list_t* temp)
    struct configuration* config;
    config = (struct configuration*)shmem;
 
-   for (int i = 0; i < temp->query_alt->n_columns; i++)
+   for (int i = 0; i < temp->query_alt->node.n_columns; i++)
    {
-      if (temp->query_alt->columns[i].type == LABEL_TYPE)
+      if (temp->query_alt->node.columns[i].type == LABEL_TYPE)
       {
          /* Dealt with later */
          continue;
@@ -2061,9 +2061,9 @@ handle_gauge_counter(column_store_t* store, int* n_store, query_list_t* temp)
       for (; idx < (*n_store); idx++)
       {
          if (!strcmp(store[idx].tag, temp->tag) &&
-             ((strlen(store[idx].name) == 0 && strlen(temp->query_alt->columns[i].name) == 0) ||
-              !strcmp(store[idx].name, temp->query_alt->columns[i].name)) &&
-             store[idx].type == temp->query_alt->columns[i].type
+             ((strlen(store[idx].name) == 0 && strlen(temp->query_alt->node.columns[i].name) == 0) ||
+              !strcmp(store[idx].name, temp->query_alt->node.columns[i].name)) &&
+             store[idx].type == temp->query_alt->node.columns[i].type
              )
          {
             break;
@@ -2108,9 +2108,9 @@ append:
                                       );
 
             /* Labels */
-            for (int j = 0; j < temp->query_alt->n_columns; j++)
+            for (int j = 0; j < temp->query_alt->node.n_columns; j++)
             {
-               if (temp->query_alt->columns[j].type != LABEL_TYPE)
+               if (temp->query_alt->node.columns[j].type != LABEL_TYPE)
                {
                   continue;
                }
@@ -2118,7 +2118,7 @@ append:
                safe_key = safe_prometheus_key(pgexporter_get_column(j, tuple));
                data = pgexporter_vappend(data, 5,
                                          ",",
-                                         temp->query_alt->columns[j].name,
+                                         temp->query_alt->node.columns[j].name,
                                          "=\"",
                                          safe_key,
                                          "\""
@@ -2144,13 +2144,13 @@ append:
          /* New Column */
          (*n_store)++;
 
-         memcpy(store[idx].name, temp->query_alt->columns[i].name, MISC_LENGTH);
-         store[idx].type = temp->query_alt->columns[i].type;
+         memcpy(store[idx].name, temp->query_alt->node.columns[i].name, MISC_LENGTH);
+         store[idx].type = temp->query_alt->node.columns[i].type;
          memcpy(store[idx].tag, temp->tag, MISC_LENGTH);
 
          data = NULL;
-         append_help_info(&data, store[idx].tag, store[idx].name, temp->query_alt->columns[i].description);
-         append_type_info(&data, store[idx].tag, store[idx].name, temp->query_alt->columns[i].type);
+         append_help_info(&data, store[idx].tag, store[idx].name, temp->query_alt->node.columns[i].description);
+         append_type_info(&data, store[idx].tag, store[idx].name, temp->query_alt->node.columns[i].type);
 
          add_column_to_store(store, idx, data, SORT_NAME, NULL);
 
