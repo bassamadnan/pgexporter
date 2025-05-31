@@ -1,0 +1,20 @@
+extension: pg_stat_statements
+metrics:
+  - metric: queries
+    queries:
+      - query: SELECT queryid, calls FROM pg_stat_statements;
+        version: "1.7"
+        columns:
+          - name: queryid
+            type: label
+          - name: calls
+            type: counter
+      - query: SELECT queryid, calls, total_exec_time FROM pg_stat_statements;
+        version: "1.8"
+        columns:
+          - name: queryid
+            type: label
+          - name: calls
+            type: counter
+          - name: total_exec_time
+            type: counter

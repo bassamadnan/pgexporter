@@ -3371,7 +3371,7 @@ copy_promethus(struct prometheus* dst, struct prometheus* src)
    dst->sort_type = src->sort_type;
    dst->server_query_type = src->server_query_type;
 
-   pgexporter_copy_query_alts(&dst->root, src->root);
+   pgexporter_copy_query_alts(&dst->pg_root, src->pg_root);
 }
 
 static void

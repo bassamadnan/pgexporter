@@ -246,6 +246,109 @@ pgexporter_has_message(char type, void* data, size_t data_size)
    return false;
 }
 
+int
+pgexporter_parse_extension_version(char* version_str, struct version* version)
+{
+   char* str_copy = NULL;
+   char* token = NULL;
+   char* saveptr = NULL;
+   int part = 0;
+
+   if (!version_str || !version)
+   {
+      return 1;
+   }
+
+   version->major = -1;
+   version->minor = -1;
+   version->patch = -1;
+
+   str_copy = strdup(version_str);
+   if (!str_copy)
+   {
+      return 1;
+   }
+
+   token = strtok_r(str_copy, ".", &saveptr);
+   while (token && part < 3)
+   {
+      int value = atoi(token);
+
+      switch (part)
+      {
+         case 0:
+            version->major = value;
+            break;
+         case 1:
+            version->minor = value;
+            break;
+         case 2:
+            version->patch = value;
+            break;
+      }
+
+      part++;
+      token = strtok_r(NULL, ".", &saveptr);
+   }
+
+   free(str_copy);
+
+   // Must have at least major version
+   if (version->major == -1)
+   {
+      return 1;
+   }
+
+   return 0;
+}
+
+int
+pgexporter_compare_extension_versions(struct version* v1, struct version* v2)
+{
+   if (!v1 || !v2)
+   {
+      return VERSION_ERROR;
+   }
+
+   /* major version */
+   if (v1->major > v2->major)
+   {
+      return VERSION_GREATER;
+   }
+   if (v1->major < v2->major)
+   {
+      return VERSION_LESS;
+   }
+
+   /* minor version */
+   int minor1 = (v1->minor == -1) ? 0 : v1->minor;
+   int minor2 = (v2->minor == -1) ? 0 : v2->minor;
+
+   if (minor1 > minor2)
+   {
+      return VERSION_GREATER;
+   }
+   if (minor1 < minor2)
+   {
+      return VERSION_LESS;
+   }
+
+   /* patch */
+   int patch1 = (v1->patch == -1) ? 0 : v1->patch;
+   int patch2 = (v2->patch == -1) ? 0 : v2->patch;
+
+   if (patch1 > patch2)
+   {
+      return VERSION_GREATER;
+   }
+   if (patch1 < patch2)
+   {
+      return VERSION_LESS;
+   }
+
+   return VERSION_EQUAL;
+}
+
 size_t
 pgexporter_extract_message_offset(size_t offset, void* data, struct message** extracted)
 {

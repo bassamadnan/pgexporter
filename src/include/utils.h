@@ -186,6 +186,27 @@ bool
 pgexporter_has_message(char type, void* data, size_t data_size);
 
 /**
+ * Parse a semantic version string (e.g., "1.8.2" or "2.1") into version struct
+ * @param version_str The version string to parse
+ * @param version Output version struct
+ * @return 0 on success, 1 on error
+ */
+int
+pgexporter_parse_extension_version(char* version_str, struct version* version);
+
+/**
+ * Compare two semantic versions
+ * @param v1 First version
+ * @param v2 Second version
+ * @return VERSION_GREATER if v1 > v2
+ *         VERSION_EQUAL if v1 == v2
+ *         VERSION_LESS if v1 < v2
+ *         VERSION_ERROR on error
+ */
+int
+pgexporter_compare_extension_versions(struct version* v1, struct version* v2);
+
+/**
  * Read a byte
  * @param data Pointer to the data
  * @return The byte

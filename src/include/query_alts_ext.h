@@ -29,55 +29,57 @@
 #include <pgexporter.h>
 
 /**
- * Query Alternatives, or query_alts, are alternatives of the same query with
- * different minimum requirements of PostgreSQL version for them to work.
+ * Extension Query Alternatives, or ext_query_alts, are alternatives of the same
+ * extension query with different minimum requirements of extension version for
+ * them to work.
  *
- * eg. A query_alt may ask both column A and B from a server with version X,
- * just A if server has version Y (given column B is not supporter
+ * eg. An ext_query_alt may ask both column A and B from a server with extension
+ * version X, just A if extension has version Y (given column B is not supported
  * by version Y).
  *
- * This allows sending that query to the server that has the highest support.
+ * This allows sending that query to the server that has the highest extension
+ * version support.
  *
- * To support fast insert as well as fetch (finding lower bound) of query to
- * send to server, query_alts is an AVL tree by design.
+ * To support insert as well as fetch (finding lower bound) of query to send
+ * to server, ext_query_alts is an AVL tree by design using semantic versioning.
  */
 
 /**
- * @brief Get the query alternative for a given server version
+ * @brief Get the extension query alternative for a given extension version
  * @param root Root of the AVL tree
- * @param server Server's major version
- * @return pg_query_alts* NULL if not supported, otherwise a valid pointer
+ * @param ext_version Extension's semantic version
+ * @return ext_query_alts* NULL if not supported, otherwise a valid pointer
  */
-struct pg_query_alts*
-pgexporter_get_query_alt(struct pg_query_alts* root, int server);
+struct ext_query_alts*
+pgexporter_get_extension_query_alt(struct ext_query_alts* root, struct version* ext_version);
 
 /**
- * @brief Insert a node `new_node` into the AVL tree `root`
+ * @brief Insert a node `new_node` into the extension AVL tree `root`
  * @param root Root of the AVL tree
  * @param new_node New node to add (Memory is free'd if node is not used)
- * @return pg_query_alts* Returns root of AVL Tree. Can ignore.
+ * @return ext_query_alts* Returns root of AVL Tree. Can ignore.
  */
-struct pg_query_alts*
-pgexporter_insert_node_avl (struct pg_query_alts* root, struct pg_query_alts** new_node);
+struct ext_query_alts*
+pgexporter_insert_extension_node_avl(struct ext_query_alts* root, struct ext_query_alts** new_node);
 
 /**
- * @brief Copy query alternative from `src` to `dst`
+ * @brief Copy extension query alternative from `src` to `dst`
  * @param dst Destination
  * @param src Source
  */
 void
-pgexporter_copy_query_alts(struct pg_query_alts** dst, struct pg_query_alts* src);
+pgexporter_copy_extension_query_alts(struct ext_query_alts** dst, struct ext_query_alts* src);
 
 /**
- * @brief Free the Query Alternatives of a configuration
- * @param configuration The configuration
+ * @brief Free the Extension Query Alternatives of a prometheus metric
+ * @param prom The prometheus metric
  */
 void
-pgexporter_free_query_alts(struct configuration* config);
+pgexporter_free_extension_query_alts(struct prometheus* prom);
 
 /**
- * @brief Free allocated memory for an AVL Tree Node for Query Alternatives given its root
+ * @brief Free allocated memory for an extension AVL Tree Node given its root
  * @param root Root of the AVL tree
  */
 void
-pgexporter_free_node_avl(struct pg_query_alts** root);
+pgexporter_free_extension_node_avl(struct ext_query_alts** root);
