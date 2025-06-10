@@ -31,7 +31,7 @@
 
 #include "pgexporter_test_2.h"
 
-// Test database connectivity through status command
+// Test database connection establishment
 START_TEST(test_pgexporter_db_connection)
 {
    int found = 0;
@@ -40,12 +40,12 @@ START_TEST(test_pgexporter_db_connection)
 }
 END_TEST
 
-// Test version information through status details command 
+// Test direct PostgreSQL version query 
 START_TEST(test_pgexporter_version_query)
 {
    int found = 0;
    found = !pgexporter_tsclient_test_version_query();
-   ck_assert_msg(found, "version information test failed");
+   ck_assert_msg(found, "PostgreSQL version query test failed");
 }
 END_TEST
 

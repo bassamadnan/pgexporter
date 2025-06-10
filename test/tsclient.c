@@ -30,9 +30,13 @@
 /* pgexporter */
 #include <pgexporter.h>
 #include <configuration.h>
+#include <extension.h>
 #include <json.h>
+#include <logging.h>
 #include <management.h>
+#include <memory.h>
 #include <network.h>
+#include <queries.h>
 #include <security.h>
 #include <shmem.h>
 #include <utils.h>
@@ -63,41 +67,81 @@ pgexporter_tsclient_init(char* base_dir)
     int ret;
     size_t size;
     char* configuration_path = NULL;
+    char* users_path = NULL;
 
     memset(project_directory, 0, sizeof(project_directory));
     memcpy(project_directory, base_dir, strlen(base_dir));
 
     configuration_path = get_configuration_path();
 
-    // Create the shared memory for the configuration
+    // Follow main.c initialization sequence exactly
+    pgexporter_memory_init();
+
     size = sizeof(struct configuration);
     if (pgexporter_create_shared_memory(size, HUGEPAGE_OFF, &shmem))
     {
         goto error;
     }
+
     pgexporter_init_configuration(shmem);
-    
-    // Try reading configuration from the configuration path
+    config = (struct configuration*)shmem;
+
+    // Read configuration file
     if (configuration_path != NULL)
     {
-        ret = pgexporter_read_configuration(shmem, configuration_path);
-        if (ret)
+        if (pgexporter_read_configuration(shmem, configuration_path))
         {
             goto error;
         }
-
-        config = (struct configuration*)shmem;
     }
     else
     {
         goto error;
-    } 
+    }
+
+    // Read users configuration (from main.c around line 520)
+    users_path = (char*)malloc(strlen(project_directory) + strlen("/pgexporter-testsuite/conf/pgexporter_users.conf") + 1);
+    strcpy(users_path, project_directory);
+    strcat(users_path, "/pgexporter-testsuite/conf/pgexporter_users.conf");
+    
+    ret = pgexporter_read_users_configuration(shmem, users_path);
+    if (ret != 0)
+    {
+        printf("Failed to read users configuration: %s (ret=%d)\n", users_path, ret);
+        // Don't fail - users file might not exist in test environment
+    }
+
+    // Initialize logging (from main.c around line 570)
+    if (pgexporter_init_logging())
+    {
+        goto error;
+    }
+
+    if (pgexporter_start_logging())
+    {
+        goto error;
+    }
+
+    // Validate configurations (from main.c around line 580)
+    if (pgexporter_validate_configuration(shmem))
+    {
+        printf("Configuration validation failed\n");
+        goto error;
+    }
+
+    if (pgexporter_validate_users_configuration(shmem))
+    {
+        printf("Users configuration validation failed\n");
+        // Don't fail - users might not be configured in test
+    }
 
     free(configuration_path);
+    free(users_path);
     return 0;
     
 error:
     free(configuration_path);
+    free(users_path);
     return 1;
 }
 
@@ -106,8 +150,14 @@ pgexporter_tsclient_destroy()
 {
     size_t size;
 
+    pgexporter_stop_logging();
+    
     size = sizeof(struct configuration);
-    return pgexporter_destroy_shared_memory(shmem, size);
+    pgexporter_destroy_shared_memory(shmem, size);
+    
+    pgexporter_memory_destroy();
+    
+    return 0;
 }
 
 int
@@ -117,19 +167,16 @@ pgexporter_tsclient_execute_ping()
     
     socket = get_connection();
     
-    // Security Checks
     if (!pgexporter_socket_isvalid(socket))
     {
         goto error;
     }
     
-    // Create a ping request to the main server
     if (pgexporter_management_request_ping(NULL, socket, MANAGEMENT_COMPRESSION_NONE, MANAGEMENT_ENCRYPTION_NONE, MANAGEMENT_OUTPUT_FORMAT_JSON))
     {
         goto error;
     }
 
-    // Check the outcome field of the output, if true success, else failure
     if (check_output_outcome(socket))
     {
         goto error;
@@ -150,19 +197,16 @@ pgexporter_tsclient_execute_shutdown()
     
     socket = get_connection();
     
-    // Security Checks
     if (!pgexporter_socket_isvalid(socket))
     {
         goto error;
     }
     
-    // Create a shutdown request to the main server
     if (pgexporter_management_request_shutdown(NULL, socket, MANAGEMENT_COMPRESSION_NONE, MANAGEMENT_ENCRYPTION_NONE, MANAGEMENT_OUTPUT_FORMAT_JSON))
     {
         goto error;
     }
 
-    // Check the outcome field of the output, if true success, else failure
     if (check_output_outcome(socket))
     {
         goto error;
@@ -183,19 +227,16 @@ pgexporter_tsclient_execute_status()
     
     socket = get_connection();
     
-    // Security Checks
     if (!pgexporter_socket_isvalid(socket))
     {
         goto error;
     }
     
-    // Create a status request to the main server
     if (pgexporter_management_request_status(NULL, socket, MANAGEMENT_COMPRESSION_NONE, MANAGEMENT_ENCRYPTION_NONE, MANAGEMENT_OUTPUT_FORMAT_JSON))
     {
         goto error;
     }
 
-    // Check the outcome field of the output, if true success, else failure
     if (check_output_outcome(socket))
     {
         goto error;
@@ -212,135 +253,110 @@ error:
 int
 pgexporter_tsclient_test_db_connection()
 {
-    struct json* read = NULL;
-    struct json* outcome = NULL;
-    struct json* response = NULL;
-    int socket = -1;
-    int ret = 1;
-    
-    printf("Testing database connection through status command...\n");
-    
-    socket = get_connection();
-    
-    // Security Checks
-    if (!pgexporter_socket_isvalid(socket))
-    {
-        printf("Failed to connect to pgexporter daemon\n");
-        goto error;
-    }
-    
-    // Use status command to check server connections
-    if (pgexporter_management_request_status(NULL, socket, MANAGEMENT_COMPRESSION_NONE, MANAGEMENT_ENCRYPTION_NONE, MANAGEMENT_OUTPUT_FORMAT_JSON))
-    {
-        printf("Failed to send status request\n");
-        goto error;
-    }
+    struct configuration* config;
+    int connected_servers = 0;
 
-    // Read the response and extract server information
-    if (pgexporter_management_read_json(NULL, socket, NULL, NULL, &read))
-    {
-        printf("Failed to read status response\n");
-        goto error;
-    }
-    
-    if (!pgexporter_json_contains_key(read, MANAGEMENT_CATEGORY_OUTCOME))
-    {
-        printf("Response missing outcome\n");
-        goto error;
-    }
+    config = (struct configuration*)shmem;
 
-    outcome = (struct json*)pgexporter_json_get(read, MANAGEMENT_CATEGORY_OUTCOME);
-    if (!pgexporter_json_contains_key(outcome, MANAGEMENT_ARGUMENT_STATUS) || !(bool)pgexporter_json_get(outcome, MANAGEMENT_ARGUMENT_STATUS))
+    printf("=== Testing database connections ===\n");
+    printf("Number of configured servers: %d\n", config->number_of_servers);
+    printf("Number of configured users: %d\n", config->number_of_users);
+    
+    // Print debug info
+    for (int i = 0; i < config->number_of_servers; i++)
     {
-        printf("Status command failed\n");
-        goto error;
+        printf("Server %d: name='%s', host='%s', port=%d, user='%s'\n", 
+               i, config->servers[i].name, config->servers[i].host, 
+               config->servers[i].port, config->servers[i].username);
     }
     
-    if (pgexporter_json_contains_key(read, MANAGEMENT_CATEGORY_RESPONSE))
+    printf("Calling pgexporter_open_connections()...\n");
+    pgexporter_open_connections();
+    printf("pgexporter_open_connections() completed\n");
+
+    // Check results (from main.c around line 750)
+    for (int i = 0; i < config->number_of_servers; i++)
     {
-        response = (struct json*)pgexporter_json_get(read, MANAGEMENT_CATEGORY_RESPONSE);
-        if (response != NULL)
+        printf("Server %s: fd=%d, state=%d, version=%d.%d\n", 
+               config->servers[i].name, config->servers[i].fd, config->servers[i].state,
+               config->servers[i].version, config->servers[i].minor_version);
+        
+        if (config->servers[i].fd != -1)
         {
-            printf("Successfully retrieved status from daemon - database connections are working\n");
-            ret = 0;
+            connected_servers++;
+            printf("  -> Connected successfully\n");
+        }
+        else
+        {
+            printf("  -> Connection failed\n");
         }
     }
 
-    pgexporter_json_destroy(read);
-    pgexporter_disconnect(socket);
-    return ret;
+    printf("Total connected servers: %d/%d\n", connected_servers, config->number_of_servers);
     
-error:
-    pgexporter_json_destroy(read);
-    pgexporter_disconnect(socket);
-    return 1;
+    pgexporter_close_connections();
+    return (connected_servers > 0) ? 0 : 1;
 }
 
 int
 pgexporter_tsclient_test_version_query()
 {
-    struct json* read = NULL;
-    struct json* outcome = NULL;
-    struct json* response = NULL;
-    int socket = -1;
+    struct configuration* config;
+    struct query* query = NULL;
+    struct tuple* current = NULL;
     int ret = 1;
-    
-    printf("Testing version information through status details command...\n");
-    
-    socket = get_connection();
-    
-    // Security Checks
-    if (!pgexporter_socket_isvalid(socket))
-    {
-        printf("Failed to connect to pgexporter daemon\n");
-        goto error;
-    }
-    
-    // Use status details command to get version information
-    if (pgexporter_management_request_status_details(NULL, socket, MANAGEMENT_COMPRESSION_NONE, MANAGEMENT_ENCRYPTION_NONE, MANAGEMENT_OUTPUT_FORMAT_JSON))
-    {
-        printf("Failed to send status details request\n");
-        goto error;
-    }
+    int server_tested = 0;
 
-    // Read the response and extract version information
-    if (pgexporter_management_read_json(NULL, socket, NULL, NULL, &read))
-    {
-        printf("Failed to read status details response\n");
-        goto error;
-    }
-    
-    if (!pgexporter_json_contains_key(read, MANAGEMENT_CATEGORY_OUTCOME))
-    {
-        printf("Response missing outcome\n");
-        goto error;
-    }
+    config = (struct configuration*)shmem;
 
-    outcome = (struct json*)pgexporter_json_get(read, MANAGEMENT_CATEGORY_OUTCOME);
-    if (!pgexporter_json_contains_key(outcome, MANAGEMENT_ARGUMENT_STATUS) || !(bool)pgexporter_json_get(outcome, MANAGEMENT_ARGUMENT_STATUS))
-    {
-        printf("Status details command failed\n");
-        goto error;
-    }
+    printf("=== Testing PostgreSQL version query ===\n");
     
-    if (pgexporter_json_contains_key(read, MANAGEMENT_CATEGORY_RESPONSE))
+    printf("Opening connections...\n");
+    pgexporter_open_connections();
+
+    // Test version query on first available server (from main.c pattern)
+    for (int i = 0; i < config->number_of_servers && !server_tested; i++)
     {
-        response = (struct json*)pgexporter_json_get(read, MANAGEMENT_CATEGORY_RESPONSE);
-        if (response != NULL)
+        if (config->servers[i].fd != -1)
         {
-            printf("Successfully retrieved detailed status with version information from daemon\n");
-            ret = 0;
+            printf("Testing version query on server %s (fd=%d)...\n", 
+                   config->servers[i].name, config->servers[i].fd);
+            
+            if (pgexporter_query_version(i, &query) == 0 && query != NULL)
+            {
+                current = query->tuples;
+                if (current != NULL)
+                {
+                    printf("PostgreSQL Version: %s.%s\n", 
+                           pgexporter_get_column(0, current),
+                           pgexporter_get_column(1, current));
+                    ret = 0;
+                    server_tested = 1;
+                }
+                else
+                {
+                    printf("No version data returned from query\n");
+                }
+                pgexporter_free_query(query);
+            }
+            else
+            {
+                printf("Failed to execute version query\n");
+            }
+        }
+        else
+        {
+            printf("Server %s not connected (fd=%d)\n", config->servers[i].name, config->servers[i].fd);
         }
     }
 
-    pgexporter_json_destroy(read);
-    pgexporter_disconnect(socket);
+    if (!server_tested)
+    {
+        printf("No servers available for version query test\n");
+    }
+
+    pgexporter_close_connections();
     return ret;
-    
-error:
-    pgexporter_json_destroy(read);
-    pgexporter_disconnect(socket);
-    return 1;
 }
 
 int
@@ -352,16 +368,15 @@ pgexporter_tsclient_test_extension_path()
 
     config = (struct configuration*)shmem;
 
-    printf("Testing extension path setup...\n");
+    printf("=== Testing extension path setup ===\n");
     
-    // Use a real program path from the project directory
+    // Use real program path from project directory (from main.c around line 650)
     char* program_path = NULL;
     program_path = pgexporter_append(program_path, project_directory);
     program_path = pgexporter_append(program_path, "/src/pgexporter");
     
     printf("Using program path: %s\n", program_path);
     
-    // Test extension path setup
     if (pgexporter_setup_extensions_path(config, program_path, &bin_path) == 0)
     {
         if (bin_path != NULL && strlen(bin_path) > 0)
@@ -371,7 +386,7 @@ pgexporter_tsclient_test_extension_path()
         }
         else
         {
-            printf("Extension path setup returned success but path is empty or null\n");
+            printf("Extension path setup returned success but path is empty\n");
         }
     }
     else
@@ -379,7 +394,7 @@ pgexporter_tsclient_test_extension_path()
         printf("Extension path setup failed\n");
     }
 
-    // Print the path regardless of success/failure for debugging
+    // Print paths for debugging
     if (bin_path != NULL)
     {
         printf("Final extension path: %s\n", bin_path);
@@ -390,7 +405,6 @@ pgexporter_tsclient_test_extension_path()
         printf("Extension path is NULL\n");
     }
     
-    // Print the configured extensions path from config
     printf("Configured extensions path: %s\n", config->extensions_path);
 
     free(program_path);

@@ -85,14 +85,14 @@ int
 pgexporter_tsclient_execute_status();
 
 /**
- * Test database connectivity through status command
+ * Test database connection establishment
  * @return 0 upon success, otherwise 1
  */
 int
 pgexporter_tsclient_test_db_connection();
 
 /**
- * Test version information through status details command
+ * Test PostgreSQL version query directly
  * @return 0 upon success, otherwise 1
  */
 int
