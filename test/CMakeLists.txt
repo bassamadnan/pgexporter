@@ -34,6 +34,7 @@ if (CHECK_FOUND)
   set(SOURCES
     tsclient.c
     testcases/pgexporter_test_1.c
+    testcases/pgexporter_test_2.c
     runner.c
   )
 

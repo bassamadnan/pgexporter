@@ -26,44 +26,53 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 #include <tsclient.h>
 
-#include "testcases/pgexporter_test_1.h"
-#include "testcases/pgexporter_test_2.h"
+#include "pgexporter_test_2.h"
 
-int
-main(int argc, char* argv[])
+// Test database connection establishment
+START_TEST(test_pgexporter_db_connection)
 {
+   int found = 0;
+   found = !pgexporter_tsclient_test_db_connection();
+   ck_assert_msg(found, "database connection test failed");
+}
+END_TEST
 
-   if (argc != 2)
-   {
-      printf("Usage: %s <project_directory>\n", argv[0]);
-      return 1;
-   }
+// Test direct PostgreSQL version query 
+START_TEST(test_pgexporter_version_query)
+{
+   int found = 0;
+   found = !pgexporter_tsclient_test_version_query();
+   ck_assert_msg(found, "PostgreSQL version query test failed");
+}
+END_TEST
 
-   int number_failed;
-   Suite* s1;
-   Suite* s2;
-   SRunner* sr;
+// Test extension path setup
+START_TEST(test_pgexporter_extension_path)
+{
+   int found = 0;
+   found = !pgexporter_tsclient_test_extension_path();
+   ck_assert_msg(found, "extension path setup test failed");
+}
+END_TEST
 
-   if (pgexporter_tsclient_init(argv[1]))
-   {
-      goto done;
-   }
+Suite*
+pgexporter_test2_suite()
+{
+   Suite* s;
+   TCase* tc_core;
 
-   s1 = pgexporter_test1_suite();
-   s2 = pgexporter_test2_suite();
+   s = suite_create("pgexporter_test2");
 
-   sr = srunner_create(s1);
-   srunner_add_suite(sr, s2);
+   tc_core = tcase_create("Core");
 
-   // Run the tests in verbose mode
-   srunner_run_all(sr, CK_VERBOSE);
-   number_failed = srunner_ntests_failed(sr);
-   srunner_free(sr);
+   tcase_set_timeout(tc_core, 60);
+   tcase_add_test(tc_core, test_pgexporter_db_connection);
+   tcase_add_test(tc_core, test_pgexporter_version_query);
+   tcase_add_test(tc_core, test_pgexporter_extension_path);
+   suite_add_tcase(s, tc_core);
 
-done:
-   pgexporter_tsclient_destroy();
-
-   return (number_failed == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
+   return s;
 }

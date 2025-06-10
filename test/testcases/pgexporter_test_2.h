@@ -27,86 +27,19 @@
  *
  */
 
-#ifndef PGEXPORTER_TSCLIENT_H
-#define PGEXPORTER_TSCLIENT_H
+#ifndef PGEXPORTER_TEST2_H
+#define PGEXPORTER_TEST2_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-#include <json.h>
-
+#include <check.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define BUFFER_SIZE 8192
-
-#define PGEXPORTER_LOG_FILE_TRAIL      "/log/pgexporter.log"
-#define PGEXPORTER_EXECUTABLE_TRAIL    "/src/pgexporter-cli"
-#define PGEXPORTER_CONFIGURATION_TRAIL "/pgexporter-testsuite/conf/pgexporter.conf"
-
-extern char project_directory[BUFFER_SIZE];
-
 /**
- * Initialize the tsclient API
- * @param base_dir path to base
- * @return 0 upon success, otherwise 1
+ * Set up a suite of test cases for pgexporter database operations
+ * @return The result
  */
-int
-pgexporter_tsclient_init(char* base_dir);
+Suite*
+pgexporter_test2_suite();
 
-/**
- * Destroy the tsclient (must be used after pgexporter_tsclient_init)
- * @return 0 upon success, otherwise 1
- */
-int
-pgexporter_tsclient_destroy();
-
-/**
- * Execute ping command on the server
- * @return 0 upon success, otherwise 1
- */
-int
-pgexporter_tsclient_execute_ping();
-
-/**
- * Execute shutdown command on the server
- * @return 0 upon success, otherwise 1
- */
-int
-pgexporter_tsclient_execute_shutdown();
-
-/**
- * Execute status command on the server
- * @return 0 upon success, otherwise 1
- */
-int
-pgexporter_tsclient_execute_status();
-
-/**
- * Test database connection establishment
- * @return 0 upon success, otherwise 1
- */
-int
-pgexporter_tsclient_test_db_connection();
-
-/**
- * Test PostgreSQL version query directly
- * @return 0 upon success, otherwise 1
- */
-int
-pgexporter_tsclient_test_version_query();
-
-/**
- * Test extension path setup
- * @return 0 upon success, otherwise 1
- */
-int
-pgexporter_tsclient_test_extension_path();
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif
+#endif // PGEXPORTER_TEST2_H
