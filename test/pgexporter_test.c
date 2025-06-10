@@ -41,6 +41,7 @@ END_TEST
 
 START_TEST(test_pgexporter_basic)
 {
+    printf("\n\nOK WORKS\n\n");
     ck_assert_int_eq(2, 2);
 }
 END_TEST
