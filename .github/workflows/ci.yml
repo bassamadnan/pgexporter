@@ -116,7 +116,7 @@ jobs:
         run: |
           brew update
           brew upgrade
-          brew install libev zstd lz4 bzip2 graphviz doxygen libyaml cmake docutils check
+          brew install libev zstd lz4 bzip2 graphviz doxygen libyaml cmake docutils check pkg-config
           brew link --force bzip2
           brew link --force zstd
           brew link --force lz4

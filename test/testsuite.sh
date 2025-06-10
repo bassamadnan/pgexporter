@@ -2,7 +2,7 @@
 #
 # Copyright (C) 2025 The pgexporter community
 #
-# Basic test suite for pgexporter, more to be added later
+# Basic test suite for pgexporter
 
 set -e
 
@@ -235,9 +235,14 @@ port = $PORT
 user = pgexporter
 EOF
 
-   cat <<EOF >$CONFIGURATION_DIRECTORY/pgexporter_users.conf
-pgexporter:$PGPASSWORD
-EOF
+   # Create user vault using pgexporter-admin
+   cd $CONFIGURATION_DIRECTORY
+   
+   # Create master key
+   echo "$PGPASSWORD" | $EXECUTABLE_DIRECTORY/pgexporter-admin master-key
+   
+   # Add user to vault
+   echo "pgexporter" | $EXECUTABLE_DIRECTORY/pgexporter-admin -f pgexporter_users.conf -U pgexporter -P "$PGPASSWORD" user add
 
    echo "pgexporter configuration created ... ok"
    echo ""
