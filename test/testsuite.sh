@@ -2,17 +2,40 @@
 #
 # Copyright (C) 2025 The pgexporter community
 #
-# Basic test suite for pgexporter
+# Redistribution and use in source and binary forms, with or without modification,
+# are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this list
+# of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright notice, this
+# list of conditions and the following disclaimer in the documentation and/or other
+# materials provided with the distribution.
+#
+# 3. Neither the name of the copyright holder nor the names of its contributors may
+# be used to endorse or promote products derived from this software without specific
+# prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+# OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
+# THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
+# OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+# HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR
+# TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 set -e
 
 OS=$(uname)
+
 THIS_FILE=$(realpath "$0")
+FILE_OWNER=$(ls -l "$THIS_FILE" | awk '{print $3}')
 USER=$(whoami)
-WAIT_TIMEOUT=10
+WAIT_TIMEOUT=5
 
 PORT=5432
-METRICS_PORT=5002
 PGPASSWORD="password"
 
 PROJECT_DIRECTORY=$(pwd)
@@ -65,29 +88,15 @@ wait_for_server_ready() {
    while true; do
       pg_isready -h localhost -p $PORT
       if [ $? -eq 0 ]; then
-         echo "PostgreSQL is ready for accepting responses"
+         echo "postgres is ready for accepting responses"
          return 0
       fi
       if [ $(($SECONDS - $start_time)) -gt $WAIT_TIMEOUT ]; then
-         echo "waiting for PostgreSQL timed out"
+         echo "waiting for server timed out"
          return 1
       fi
-      sleep 1
-   done
-}
 
-wait_for_pgexporter_ready() {
-   local start_time=$SECONDS
-   while true; do
-      curl -s http://localhost:$METRICS_PORT/metrics >/dev/null 2>&1
-      if [ $? -eq 0 ]; then
-         echo "pgexporter is ready for accepting responses"
-         return 0
-      fi
-      if [ $(($SECONDS - $start_time)) -gt $WAIT_TIMEOUT ]; then
-         echo "waiting for pgexporter timed out"
-         return 1
-      fi
+      # Avoid busy-waiting
       sleep 1
    done
 }
@@ -102,28 +111,85 @@ function sed_i() {
 
 ##############################################################
 
+############### CHECK POSTGRES DEPENDENCIES ##################
+check_inidb() {
+   if which initdb >/dev/null 2>&1; then
+      echo "check initdb in path ... ok"
+      return 0
+   else
+      echo "check initdb in path ... not present"
+      return 1
+   fi
+}
+
+check_pg_ctl() {
+   if which pg_ctl >/dev/null 2>&1; then
+      echo "check pg_ctl in path ... ok"
+      return 0
+   else
+      echo "check pg_ctl in path ... not ok"
+      return 1
+   fi
+}
+
+stop_pgctl(){
+   if [[ "$OS" == "FreeBSD" ]]; then
+      su - postgres -c "$PGCTL_PATH -D $DATA_DIRECTORY -l $PGCTL_LOG_FILE stop"
+   else
+      pg_ctl -D $DATA_DIRECTORY -l $PGCTL_LOG_FILE stop
+   fi
+}
+
+run_as_postgres() {
+  if [[ "$OS" == "FreeBSD" ]]; then
+    su - postgres -c "$*"
+  else
+    eval "$@"
+  fi
+}
+
+check_psql() {
+   if which psql >/dev/null 2>&1; then
+      echo "check psql in path ... ok"
+      return 0
+   else
+      echo "check psql in path ... not present"
+      return 1
+   fi
+}
+
+check_postgres_version() {
+   version=$(psql --version | awk '{print $3}' | sed -E 's/^([0-9]+(\.[0-9]+)?).*/\1/')
+   major_version=$(echo "$version" | cut -d'.' -f1)
+   required_major_version=$1
+   if [ "$major_version" -ge "$required_major_version" ]; then
+      echo "check postgresql version: $version ... ok"
+      return 0
+   else
+      echo "check postgresql version: $version ... not ok"
+      return 1
+   fi
+}
+
 check_system_requirements() {
    echo -e "\e[34mCheck System Requirements \e[0m"
    echo "check system os ... $OS"
-   
-   if ! which initdb >/dev/null 2>&1; then
-      echo "check initdb in path ... not present"
+   check_inidb
+   if [ $? -ne 0 ]; then
       exit 1
    fi
-   echo "check initdb in path ... ok"
-   
-   if ! which pg_ctl >/dev/null 2>&1; then
-      echo "check pg_ctl in path ... not ok"
+   check_pg_ctl
+   if [ $? -ne 0 ]; then
       exit 1
    fi
-   echo "check pg_ctl in path ... ok"
-   
-   if ! which psql >/dev/null 2>&1; then
-      echo "check psql in path ... not present"
+   check_psql
+   if [ $? -ne 0 ]; then
       exit 1
    fi
-   echo "check psql in path ... ok"
-   
+   check_postgres_version 17
+   if [ $? -ne 0 ]; then
+      exit 1
+   fi
    echo ""
 }
 
@@ -137,14 +203,17 @@ initialize_log_files() {
    echo "create log file ... $PGCTL_LOG_FILE"
    echo ""
 }
+##############################################################
 
+##################### POSTGRES OPERATIONS ####################
 create_cluster() {
-   echo -e "\e[34mInitializing PostgreSQL Cluster \e[0m"
-   mkdir -p "$POSTGRES_OPERATION_DIR"
-   mkdir -p "$DATA_DIRECTORY"
-   mkdir -p $CONFIGURATION_DIRECTORY
+   local port=$1
+   echo -e "\e[34mInitializing Cluster \e[0m"
 
    if [ "$OS" = "FreeBSD" ]; then
+    mkdir -p "$POSTGRES_OPERATION_DIR"
+    mkdir -p "$DATA_DIRECTORY"
+    mkdir -p $CONFIGURATION_DIRECTORY
     if ! pw user show postgres >/dev/null 2>&1; then
         pw groupadd -n postgres -g 770
         pw useradd -n postgres -u 770 -g postgres -d /var/db/postgres -s /bin/sh
@@ -152,23 +221,70 @@ create_cluster() {
     chown postgres:postgres $PGCTL_LOG_FILE
     chown -R postgres:postgres "$DATA_DIRECTORY"
     chown -R postgres:postgres $CONFIGURATION_DIRECTORY
+
    fi
 
+   echo $DATA_DIRECTORY
+   
    INITDB_PATH=$(command -v initdb)
-   if [ "$OS" = "FreeBSD" ]; then
-     su - postgres -c "$INITDB_PATH -k -D $DATA_DIRECTORY"
-   else
-     "$INITDB_PATH" -k -D $DATA_DIRECTORY
+
+   if [ -z "$INITDB_PATH" ]; then
+      echo "Error: initdb not found!" >&2
+      exit 1
    fi
-   
+   run_as_postgres "$INITDB_PATH -k -D $DATA_DIRECTORY"
+   echo "initdb exit code: $?"
    echo "initialize database ... ok"
-   
-   # Configure PostgreSQL
-   sed_i "s/^#[[:space:]]*password_encryption[[:space:]]*=[[:space:]]*(md5|scram-sha-256)/password_encryption = scram-sha-256/" "$DATA_DIRECTORY/postgresql.conf"
-   sed_i "s|#unix_socket_directories = '/var/run/postgresql'|unix_socket_directories = '/tmp'|" $DATA_DIRECTORY/postgresql.conf
-   sed_i "s/#port = 5432/port = $PORT/" $DATA_DIRECTORY/postgresql.conf
-   sed_i "s/#wal_level = replica/wal_level = replica/" $DATA_DIRECTORY/postgresql.conf
-   
+   set +e
+   echo "setting postgresql.conf"
+
+   error_out=$(sed_i "s/^#[[:space:]]*password_encryption[[:space:]]*=[[:space:]]*(md5|scram-sha-256)/password_encryption = scram-sha-256/" "$DATA_DIRECTORY/postgresql.conf" 2>&1)
+
+   if [ $? -ne 0 ]; then
+      echo "setting password_encryption ... $error_out"
+      clean
+      exit 1
+   else
+      echo "setting password_encryption ... scram-sha-256"
+   fi
+   error_out=$(sed_i "s|#unix_socket_directories = '/var/run/postgresql'|unix_socket_directories = '/tmp'|" $DATA_DIRECTORY/postgresql.conf 2>&1)
+   if [ $? -ne 0 ]; then
+      echo "setting unix_socket_directories ... $error_out"
+      clean
+      exit 1
+   else
+      echo "setting unix_socket_directories ... '/tmp'"
+   fi
+   error_out=$(sed_i "s/#port = 5432/port = $port/" $DATA_DIRECTORY/postgresql.conf 2>&1)
+   if [ $? -ne 0 ]; then
+      echo "setting port ... $error_out"
+      clean
+      exit 1
+   else
+      echo "setting port ... $port"
+   fi
+   error_out=$(sed_i "s/#wal_level = replica/wal_level = replica/" $DATA_DIRECTORY/postgresql.conf 2>&1)
+   if [ $? -ne 0 ]; then
+      echo "setting wal_level ... $error_out"
+      clean
+      exit 1
+   else
+      echo "setting wal_level ... replica"
+   fi
+
+   LOG_ABS_PATH=$(realpath "$LOG_DIRECTORY")
+   sed_i "s/^#*logging_collector.*/logging_collector = on/" "$DATA_DIRECTORY/postgresql.conf"
+   sed_i "s/^#*log_destination.*/log_destination = 'stderr'/" "$DATA_DIRECTORY/postgresql.conf"
+   sed_i "s|^#*log_directory.*|log_directory = '$LOG_ABS_PATH'|" "$DATA_DIRECTORY/postgresql.conf"
+   sed_i "s/^#*log_filename.*/log_filename = 'logfile'/" "$DATA_DIRECTORY/postgresql.conf"
+
+   # If any of the above settings are missing, append them
+   grep -q "^logging_collector" "$DATA_DIRECTORY/postgresql.conf" || echo "logging_collector = on" >> "$DATA_DIRECTORY/postgresql.conf"
+   grep -q "^log_destination" "$DATA_DIRECTORY/postgresql.conf" || echo "log_destination = 'stderr'" >> "$DATA_DIRECTORY/postgresql.conf"
+   grep -q "^log_directory" "$DATA_DIRECTORY/postgresql.conf" || echo "log_directory = '$LOG_ABS_PATH'" >> "$DATA_DIRECTORY/postgresql.conf"
+   grep -q "^log_filename" "$DATA_DIRECTORY/postgresql.conf" || echo "log_filename = 'logfile'" >> "$DATA_DIRECTORY/postgresql.conf"
+
+   set -e
    echo ""
 }
 
@@ -184,49 +300,96 @@ initialize_hba_configuration() {
    echo ""
 }
 
-start_postgresql() {
-   echo -e "\e[34mStarting PostgreSQL \e[0m"
+initialize_cluster() {
+   echo -e "\e[34mInitializing Cluster \e[0m"
+   set +e
    PGCTL_PATH=$(command -v pg_ctl)
-   
-   if [ "$OS" = "FreeBSD" ]; then
-     su - postgres -c "$PGCTL_PATH -D $DATA_DIRECTORY -l $PGCTL_LOG_FILE start"
-   else
-     "$PGCTL_PATH" -D $DATA_DIRECTORY -l $PGCTL_LOG_FILE start
-   fi
-   
-   wait_for_server_ready
-   if [ $? -ne 0 ]; then
-      echo "PostgreSQL failed to start"
+   if [ -z "$PGCTL_PATH" ]; then
+      echo "Error: pg_ctl not found!" >&2
       exit 1
    fi
-   
-   # Create pgexporter user with monitoring privileges
-   psql -h /tmp -p $PORT -U $PSQL_USER -d postgres -c "CREATE USER pgexporter WITH PASSWORD '$PGPASSWORD';" || true
-   psql -h /tmp -p $PORT -U $PSQL_USER -d postgres -c "GRANT pg_monitor TO pgexporter;" || true
-   
-   echo "PostgreSQL setup complete"
+   run_as_postgres "$PGCTL_PATH -D $DATA_DIRECTORY -l $PGCTL_LOG_FILE start"
+   if [ $? -ne 0 ]; then
+      echo "PostgreSQL failed to start. Printing log:"
+      cat $PGCTL_LOG_FILE
+      clean
+      exit 1
+   fi
+   pg_isready -h localhost -p $PORT
+   if [ $? -eq 0 ]; then
+      echo "postgres server is accepting requests ... ok"
+   else
+      echo "postgres server is not accepting response ... not ok"
+      clean
+      exit 1
+   fi
+   err_out=$(psql -h /tmp -p $PORT -U $PSQL_USER -d postgres -c "CREATE USER pgexporter WITH PASSWORD '$PGPASSWORD';" 2>&1)
+   if [ $? -ne 0 ]; then
+      echo "create user pgexporter ... $err_out"
+      stop_pgctl
+      clean
+      exit 1
+   else
+      echo "create user pgexporter ... ok"
+   fi
+   err_out=$(psql -h /tmp -p $PORT -U $PSQL_USER -d postgres -c "GRANT pg_monitor TO pgexporter;" 2>&1)
+   if [ $? -ne 0 ]; then
+      echo "grant pg_monitor to pgexporter ... $err_out"
+      stop_pgctl
+      clean
+      exit 1
+   else
+      echo "grant pg_monitor to pgexporter ... ok"
+   fi
+   set -e
+   stop_pgctl
    echo ""
 }
 
-stop_postgresql() {
-   PGCTL_PATH=$(command -v pg_ctl)
-   if [ "$OS" = "FreeBSD" ]; then
-     su - postgres -c "$PGCTL_PATH -D $DATA_DIRECTORY -l $PGCTL_LOG_FILE stop"
+clean_logs() {
+   if [ -d $LOG_DIRECTORY ]; then
+      rm -r $LOG_DIRECTORY
+      echo "remove log directory $LOG_DIRECTORY ... ok"
    else
-     "$PGCTL_PATH" -D $DATA_DIRECTORY -l $PGCTL_LOG_FILE stop
+      echo "$LOG_DIRECTORY not present ... ok"
    fi
 }
 
-initialize_pgexporter_configuration() {
-   echo -e "\e[34mInitialize pgexporter configuration \e[0m"
-   
+clean() {
+   echo -e "\e[34mClean Test Resources \e[0m"
+   if [ -d $POSTGRES_OPERATION_DIR ]; then
+      rm -r $POSTGRES_OPERATION_DIR
+      echo "remove postgres operations directory $POSTGRES_OPERATION_DIR ... ok"
+   else
+      echo "$POSTGRES_OPERATION_DIR not present ... ok"
+   fi
+
+   if [ -d $PGEXPORTER_OPERATION_DIR ]; then
+      rm -r $PGEXPORTER_OPERATION_DIR
+      echo "remove pgexporter operations directory $PGEXPORTER_OPERATION_DIR ... ok"
+   else
+      echo "$PGEXPORTER_OPERATION_DIR not present ... ok"
+   fi
+}
+
+##############################################################
+
+#################### PGEXPORTER OPERATIONS #####################
+pgexporter_initialize_configuration() {
+   echo -e "\e[34mInitialize pgexporter configuration files \e[0m"
+   mkdir -p $CONFIGURATION_DIRECTORY
+   echo "create configuration directory $CONFIGURATION_DIRECTORY ... ok"
+   touch $CONFIGURATION_DIRECTORY/pgexporter.conf $CONFIGURATION_DIRECTORY/pgexporter_users.conf
+   echo "create pgexporter.conf and pgexporter_users.conf inside $CONFIGURATION_DIRECTORY ... ok"
    cat <<EOF >$CONFIGURATION_DIRECTORY/pgexporter.conf
 [pgexporter]
 host = localhost
-metrics = $METRICS_PORT
+metrics = 5002
+
 log_type = file
 log_level = debug5
 log_path = $PGEXPORTER_LOG_FILE
+
 unix_socket_dir = /tmp/
 
 [primary]
@@ -234,112 +397,102 @@ host = localhost
 port = $PORT
 user = pgexporter
 EOF
-
-   # Create user vault using pgexporter-admin
-   cd $CONFIGURATION_DIRECTORY
-   
-   # Create master key
-   echo "$PGPASSWORD" | $EXECUTABLE_DIRECTORY/pgexporter-admin master-key
-   
-   # Add user to vault
-   echo "pgexporter" | $EXECUTABLE_DIRECTORY/pgexporter-admin -f pgexporter_users.conf -U pgexporter -P "$PGPASSWORD" user add
-
-   echo "pgexporter configuration created ... ok"
+   echo "add test configuration to pgexporter.conf ... ok"
+   if [[ "$OS" == "FreeBSD" ]]; then
+    chown -R postgres:postgres $CONFIGURATION_DIRECTORY
+    chown -R postgres:postgres $PGEXPORTER_LOG_FILE
+   fi
+   run_as_postgres "$EXECUTABLE_DIRECTORY/pgexporter-admin master-key -P $PGPASSWORD || true"
+   run_as_postgres "$EXECUTABLE_DIRECTORY/pgexporter-admin -f $CONFIGURATION_DIRECTORY/pgexporter_users.conf -U pgexporter -P $PGPASSWORD user add"
+   echo "add user pgexporter to pgexporter_users.conf file ... ok"
    echo ""
 }
 
-start_pgexporter() {
-   echo -e "\e[34mStarting pgexporter \e[0m"
-   
-   # Start pgexporter in daemon mode
-   $EXECUTABLE_DIRECTORY/pgexporter -c $CONFIGURATION_DIRECTORY/pgexporter.conf -u $CONFIGURATION_DIRECTORY/pgexporter_users.conf -d
-   
-   wait_for_pgexporter_ready
-   if [ $? -ne 0 ]; then
-      echo "pgexporter failed to start"
+execute_testcases() {
+   echo -e "\e[34mExecute Testcases \e[0m"
+   set +e
+   run_as_postgres "pg_ctl -D $DATA_DIRECTORY -l $PGCTL_LOG_FILE start"
+   pg_isready -h localhost -p $PORT
+   if [ $? -eq 0 ]; then
+      echo "postgres server accepting requests ... ok"
+   else
+      echo "postgres server is not accepting response ... not ok"
+      stop_pgctl
+      clean
       exit 1
    fi
-   
-   echo "pgexporter started successfully"
-   echo ""
-}
-
-stop_pgexporter() {
-   echo "Stopping pgexporter..."
+   echo "starting pgexporter server in daemon mode"
+   run_as_postgres "$EXECUTABLE_DIRECTORY/pgexporter -c $CONFIGURATION_DIRECTORY/pgexporter.conf -u $CONFIGURATION_DIRECTORY/pgexporter_users.conf -d"
+   wait_for_server_ready
+   if [ $? -ne 0 ]; then
+      echo "pgexporter server not ready ... not ok"
+      stop_pgctl
+      clean
+      exit 1
+   fi
+   ### RUN TESTCASES ###
+   $TEST_DIRECTORY/pgexporter_test
+   if [ $? -ne 0 ]; then
+      # Kill pgexporter
+      pkill -f pgexporter || true
+      stop_pgctl
+      clean
+      exit 1
+   fi
+   echo "Kill pgexporter"
    pkill -f pgexporter || true
-   sleep 2
-}
-
-execute_tests() {
-   echo -e "\e[34mExecute Test Cases \e[0m"
-   
-   # Run the actual test executable
-   if [ -f "$TEST_DIRECTORY/pgexporter_test" ]; then
-      $TEST_DIRECTORY/pgexporter_test
-   else
-      echo "Test executable not found. Building tests..."
-      cd build
-      make pgexporter_test
-      ./test/pgexporter_test
-   fi
-   
-   echo "Tests completed"
+   echo "shutdown pgexporter server ... ok"
+   stop_pgctl
+   set -e
    echo ""
 }
 
-clean() {
-   echo -e "\e[34mClean Test Resources \e[0m"
-   
-   stop_pgexporter
-   stop_postgresql
-   
-   if [ -d $POSTGRES_OPERATION_DIR ]; then
-      rm -rf $POSTGRES_OPERATION_DIR
-      echo "remove postgres operations directory ... ok"
-   fi
-
-   if [ -d $PGEXPORTER_OPERATION_DIR ]; then
-      rm -rf $PGEXPORTER_OPERATION_DIR
-      echo "remove pgexporter operations directory ... ok"
-   fi
-   
-   if [ -d $LOG_DIRECTORY ]; then
-      rm -rf $LOG_DIRECTORY
-      echo "remove log directory ... ok"
-   fi
-}
+##############################################################
 
 run_tests() {
-   check_system_requirements
-   initialize_log_files
-   
-   PORT=$(next_available_port $PORT)
-   METRICS_PORT=$(next_available_port $METRICS_PORT)
-   
-   create_cluster
-   initialize_hba_configuration
-   start_postgresql
-   initialize_pgexporter_configuration
-   start_pgexporter
-   execute_tests
-   clean
+   # Check if the user is pgexporter
+   if [ "$FILE_OWNER" == "$USER" ]; then
+      ## Postgres operations
+      check_system_requirements
+
+      initialize_log_files
+
+      PORT=$(next_available_port $PORT)
+      create_cluster $PORT
+
+      initialize_hba_configuration
+      initialize_cluster
+
+      ## pgexporter operations
+      pgexporter_initialize_configuration
+      execute_testcases
+      # clean cluster
+      clean
+   else
+      echo "user should be $FILE_OWNER"
+      exit 1
+   fi
 }
 
 usage() {
-   echo "Usage: $0 [clean]"
-   echo "  clean    - clean up test environment"
+   echo "Usage: $0 [sub-command]"
+   echo "Subcommand:"
+   echo " clean           clean up test suite environment"
    exit 1
 }
 
 if [ $# -gt 1 ]; then
-   usage
+   usage # More than one argument, show usage and exit
 elif [ $# -eq 1 ]; then
    if [ "$1" == "clean" ]; then
+      # If the parameter is 'clean', run clean_function
       clean
+      clean_logs
    else
       echo "Invalid parameter: $1"
-      usage
+      usage # If an invalid parameter is provided, show usage and exit
    fi
 else
+   # If no arguments are provided, run function_without_param
    run_tests
 fi
