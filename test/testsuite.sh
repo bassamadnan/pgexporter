@@ -432,7 +432,7 @@ execute_testcases() {
       exit 1
    fi
    ### RUN TESTCASES ###
-   $TEST_DIRECTORY/pgexporter_test $PROJECT_DIRECTORY $PROJECT_DIRECTORY
+   $TEST_DIRECTORY/pgexporter_test $PROJECT_DIRECTORY
    if [ $? -ne 0 ]; then
       # Kill pgexporter
       pkill -f pgexporter || true
