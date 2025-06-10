@@ -424,25 +424,22 @@ execute_testcases() {
    fi
    echo "starting pgexporter server in daemon mode"
    run_as_postgres "$EXECUTABLE_DIRECTORY/pgexporter -c $CONFIGURATION_DIRECTORY/pgexporter.conf -u $CONFIGURATION_DIRECTORY/pgexporter_users.conf -d"
-   wait_for_server_ready
-   if [ $? -ne 0 ]; then
-      echo "pgexporter server not ready ... not ok"
-      stop_pgctl
-      clean
-      exit 1
-   fi
+   
+   # Wait a moment for pgexporter to start
+   sleep 2
+   
    ### RUN TESTCASES ###
    $TEST_DIRECTORY/pgexporter_test $PROJECT_DIRECTORY
    if [ $? -ne 0 ]; then
-      # Kill pgexporter
+      # Kill pgexporter if tests failed
       pkill -f pgexporter || true
       stop_pgctl
       clean
       exit 1
    fi
-   echo "Kill pgexporter"
+   
    pkill -f pgexporter || true
-   echo "shutdown pgexporter server ... ok"
+   echo "pgexporter server stopped ... ok"
    stop_pgctl
    set -e
    echo ""

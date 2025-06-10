@@ -32,7 +32,9 @@ pkg_check_modules(CHECK check)
 
 if (CHECK_FOUND)
   set(SOURCES
-    pgexporter_test.c
+    tsclient.c
+    testcases/pgexporter_test_1.c
+    runner.c
   )
 
   add_compile_options(-O0)
@@ -58,6 +60,7 @@ if (CHECK_FOUND)
 
   add_executable(pgexporter_test ${SOURCES})
   target_include_directories(pgexporter_test PRIVATE ${CMAKE_SOURCE_DIR}/src/include)
+  target_include_directories(pgexporter_test PRIVATE ${CMAKE_SOURCE_DIR}/test/include)
   target_include_directories(pgexporter_test PRIVATE ${CHECK_INCLUDE_DIRS})
 
   if(EXISTS "/etc/debian_version")

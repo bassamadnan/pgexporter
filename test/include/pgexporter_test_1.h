@@ -24,62 +24,22 @@
  * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR
  * TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
  */
+
+#ifndef PGEXPORTER_TEST1_H
+#define PGEXPORTER_TEST1_H
 
 #include <check.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-static char project_directory[1024];
+/**
+ * Set up a suite of test cases for pgexporter core daemon operations
+ * @return The result
+ */
+Suite*
+pgexporter_test1_suite();
 
-START_TEST(test_dummy)
-{
-    ck_assert_int_eq(1, 1);
-}
-END_TEST
-
-START_TEST(test_pgexporter_basic)
-{
-    printf("\n\nOK WORKS\n\n");
-    ck_assert_int_eq(2, 2);
-}
-END_TEST
-
-Suite *
-pgexporter_suite()
-{
-    Suite *s;
-    TCase *tc_core;
-
-    s = suite_create("pgexporter");
-    tc_core = tcase_create("Core");
-    tcase_set_timeout(tc_core, 30);
-    tcase_add_test(tc_core, test_dummy);
-    tcase_add_test(tc_core, test_pgexporter_basic);
-    suite_add_tcase(s, tc_core);
-
-    return s;
-}
-
-int main(int argc, char* argv[])
-{
-    int number_failed;
-    Suite *s;
-    SRunner *sr;
-
-    if (argc != 2)
-    {
-        return 1;
-    }
-
-    strncpy(project_directory, argv[1], sizeof(project_directory) - 1);
-
-    s = pgexporter_suite();
-    sr = srunner_create(s);
-    srunner_run_all(sr, CK_VERBOSE);
-    number_failed = srunner_ntests_failed(sr);
-    srunner_free(sr);
-
-    return (number_failed == 0) ? 0 : 1;
-}
+#endif // PGEXPORTER_TEST1_H
