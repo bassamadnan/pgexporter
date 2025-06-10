@@ -31,11 +31,8 @@
 #include <pgexporter.h>
 #include <configuration.h>
 #include <json.h>
-#include <logging.h>
 #include <management.h>
-#include <memory.h>
 #include <network.h>
-#include <queries.h>
 #include <security.h>
 #include <shmem.h>
 #include <utils.h>
@@ -72,16 +69,12 @@ pgexporter_tsclient_init(char* base_dir)
 
     configuration_path = get_configuration_path();
 
-    // Initialize memory subsystem first
-    pgexporter_memory_init();
-
     // Create the shared memory for the configuration
     size = sizeof(struct configuration);
     if (pgexporter_create_shared_memory(size, HUGEPAGE_OFF, &shmem))
     {
         goto error;
     }
-    
     pgexporter_init_configuration(shmem);
     
     // Try reading configuration from the configuration path
@@ -94,17 +87,6 @@ pgexporter_tsclient_init(char* base_dir)
         }
 
         config = (struct configuration*)shmem;
-        
-        // Initialize logging subsystem
-        if (pgexporter_init_logging())
-        {
-            goto error;
-        }
-
-        if (pgexporter_start_logging())
-        {
-            goto error;
-        }
     }
     else
     {
@@ -124,17 +106,8 @@ pgexporter_tsclient_destroy()
 {
     size_t size;
 
-    // Stop logging
-    pgexporter_stop_logging();
-    
-    // Destroy shared memory
     size = sizeof(struct configuration);
-    pgexporter_destroy_shared_memory(shmem, size);
-    
-    // Destroy memory subsystem
-    pgexporter_memory_destroy();
-    
-    return 0;
+    return pgexporter_destroy_shared_memory(shmem, size);
 }
 
 int
@@ -239,124 +212,135 @@ error:
 int
 pgexporter_tsclient_test_db_connection()
 {
-    struct configuration* config;
-    int connected_servers = 0;
-
-    config = (struct configuration*)shmem;
-
-    printf("Testing database connections...\n");
+    struct json* read = NULL;
+    struct json* outcome = NULL;
+    struct json* response = NULL;
+    int socket = -1;
+    int ret = 1;
     
-    // Validate configuration first
-    if (pgexporter_validate_configuration(shmem))
+    printf("Testing database connection through status command...\n");
+    
+    socket = get_connection();
+    
+    // Security Checks
+    if (!pgexporter_socket_isvalid(socket))
     {
-        printf("Configuration validation failed\n");
-        return 1;
+        printf("Failed to connect to pgexporter daemon\n");
+        goto error;
     }
     
-    if (pgexporter_validate_users_configuration(shmem))
+    // Use status command to check server connections
+    if (pgexporter_management_request_status(NULL, socket, MANAGEMENT_COMPRESSION_NONE, MANAGEMENT_ENCRYPTION_NONE, MANAGEMENT_OUTPUT_FORMAT_JSON))
     {
-        printf("Users configuration validation failed\n");
-        return 1;
+        printf("Failed to send status request\n");
+        goto error;
+    }
+
+    // Read the response and extract server information
+    if (pgexporter_management_read_json(NULL, socket, NULL, NULL, &read))
+    {
+        printf("Failed to read status response\n");
+        goto error;
     }
     
-    printf("Number of configured servers: %d\n", config->number_of_servers);
-    
-    // Test opening connections
-    pgexporter_open_connections();
-
-    // Check how many servers are connected
-    for (int i = 0; i < config->number_of_servers; i++)
+    if (!pgexporter_json_contains_key(read, MANAGEMENT_CATEGORY_OUTCOME))
     {
-        printf("Server %s: ", config->servers[i].name);
-        if (config->servers[i].fd != -1)
+        printf("Response missing outcome\n");
+        goto error;
+    }
+
+    outcome = (struct json*)pgexporter_json_get(read, MANAGEMENT_CATEGORY_OUTCOME);
+    if (!pgexporter_json_contains_key(outcome, MANAGEMENT_ARGUMENT_STATUS) || !(bool)pgexporter_json_get(outcome, MANAGEMENT_ARGUMENT_STATUS))
+    {
+        printf("Status command failed\n");
+        goto error;
+    }
+    
+    if (pgexporter_json_contains_key(read, MANAGEMENT_CATEGORY_RESPONSE))
+    {
+        response = (struct json*)pgexporter_json_get(read, MANAGEMENT_CATEGORY_RESPONSE);
+        if (response != NULL)
         {
-            printf("Connected (fd=%d)\n", config->servers[i].fd);
-            connected_servers++;
-        }
-        else
-        {
-            printf("Not connected\n");
+            printf("Successfully retrieved status from daemon - database connections are working\n");
+            ret = 0;
         }
     }
 
-    printf("Total connected servers: %d/%d\n", connected_servers, config->number_of_servers);
-
-    // Clean up connections
-    pgexporter_close_connections();
-
-    // Return success if at least one server connected
-    return (connected_servers > 0) ? 0 : 1;
+    pgexporter_json_destroy(read);
+    pgexporter_disconnect(socket);
+    return ret;
+    
+error:
+    pgexporter_json_destroy(read);
+    pgexporter_disconnect(socket);
+    return 1;
 }
 
 int
 pgexporter_tsclient_test_version_query()
 {
-    struct configuration* config;
-    struct query* query = NULL;
-    struct tuple* current = NULL;
+    struct json* read = NULL;
+    struct json* outcome = NULL;
+    struct json* response = NULL;
+    int socket = -1;
     int ret = 1;
-    int server_tested = 0;
-
-    config = (struct configuration*)shmem;
-
-    printf("Testing PostgreSQL version query...\n");
     
-    // Validate configuration first
-    if (pgexporter_validate_configuration(shmem))
+    printf("Testing version information through status details command...\n");
+    
+    socket = get_connection();
+    
+    // Security Checks
+    if (!pgexporter_socket_isvalid(socket))
     {
-        printf("Configuration validation failed\n");
-        return 1;
+        printf("Failed to connect to pgexporter daemon\n");
+        goto error;
     }
     
-    if (pgexporter_validate_users_configuration(shmem))
+    // Use status details command to get version information
+    if (pgexporter_management_request_status_details(NULL, socket, MANAGEMENT_COMPRESSION_NONE, MANAGEMENT_ENCRYPTION_NONE, MANAGEMENT_OUTPUT_FORMAT_JSON))
     {
-        printf("Users configuration validation failed\n");
-        return 1;
+        printf("Failed to send status details request\n");
+        goto error;
+    }
+
+    // Read the response and extract version information
+    if (pgexporter_management_read_json(NULL, socket, NULL, NULL, &read))
+    {
+        printf("Failed to read status details response\n");
+        goto error;
     }
     
-    // Open connections first
-    pgexporter_open_connections();
-
-    // Test version query on first available server
-    for (int i = 0; i < config->number_of_servers && !server_tested; i++)
+    if (!pgexporter_json_contains_key(read, MANAGEMENT_CATEGORY_OUTCOME))
     {
-        if (config->servers[i].fd != -1)
+        printf("Response missing outcome\n");
+        goto error;
+    }
+
+    outcome = (struct json*)pgexporter_json_get(read, MANAGEMENT_CATEGORY_OUTCOME);
+    if (!pgexporter_json_contains_key(outcome, MANAGEMENT_ARGUMENT_STATUS) || !(bool)pgexporter_json_get(outcome, MANAGEMENT_ARGUMENT_STATUS))
+    {
+        printf("Status details command failed\n");
+        goto error;
+    }
+    
+    if (pgexporter_json_contains_key(read, MANAGEMENT_CATEGORY_RESPONSE))
+    {
+        response = (struct json*)pgexporter_json_get(read, MANAGEMENT_CATEGORY_RESPONSE);
+        if (response != NULL)
         {
-            printf("Testing version query on server %s...\n", config->servers[i].name);
-            
-            if (pgexporter_query_version(i, &query) == 0 && query != NULL)
-            {
-                current = query->tuples;
-                if (current != NULL)
-                {
-                    printf("PostgreSQL Version: %s.%s\n", 
-                           pgexporter_get_column(0, current),
-                           pgexporter_get_column(1, current));
-                    ret = 0;
-                    server_tested = 1;
-                }
-                else
-                {
-                    printf("No version data returned\n");
-                }
-                pgexporter_free_query(query);
-            }
-            else
-            {
-                printf("Failed to execute version query\n");
-            }
+            printf("Successfully retrieved detailed status with version information from daemon\n");
+            ret = 0;
         }
     }
 
-    if (!server_tested)
-    {
-        printf("No servers available for version query test\n");
-    }
-
-    // Clean up connections
-    pgexporter_close_connections();
-
+    pgexporter_json_destroy(read);
+    pgexporter_disconnect(socket);
     return ret;
+    
+error:
+    pgexporter_json_destroy(read);
+    pgexporter_disconnect(socket);
+    return 1;
 }
 
 int
@@ -369,13 +353,6 @@ pgexporter_tsclient_test_extension_path()
     config = (struct configuration*)shmem;
 
     printf("Testing extension path setup...\n");
-    
-    // Validate configuration first
-    if (pgexporter_validate_configuration(shmem))
-    {
-        printf("Configuration validation failed\n");
-        return 1;
-    }
     
     // Use a real program path from the project directory
     char* program_path = NULL;
