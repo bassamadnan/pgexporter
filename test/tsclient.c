@@ -74,7 +74,6 @@ pgexporter_tsclient_init(char* base_dir)
 
     configuration_path = get_configuration_path();
 
-    // Follow main.c initialization sequence exactly
     pgexporter_memory_init();
 
     size = sizeof(struct configuration);
@@ -99,7 +98,6 @@ pgexporter_tsclient_init(char* base_dir)
         goto error;
     }
 
-    // Read users configuration (from main.c around line 520)
     users_path = (char*)malloc(strlen(project_directory) + strlen("/pgexporter-testsuite/conf/pgexporter_users.conf") + 1);
     strcpy(users_path, project_directory);
     strcat(users_path, "/pgexporter-testsuite/conf/pgexporter_users.conf");
@@ -108,7 +106,7 @@ pgexporter_tsclient_init(char* base_dir)
     if (ret != 0)
     {
         printf("Failed to read users configuration: %s (ret=%d)\n", users_path, ret);
-        // Don't fail - users file might not exist in test environment
+        goto error;
     }
 
     // Initialize logging (from main.c around line 570)
@@ -132,7 +130,7 @@ pgexporter_tsclient_init(char* base_dir)
     if (pgexporter_validate_users_configuration(shmem))
     {
         printf("Users configuration validation failed\n");
-        // Don't fail - users might not be configured in test
+        goto error;
     }
 
     free(configuration_path);
