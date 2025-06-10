@@ -133,10 +133,11 @@ check_pg_ctl() {
 }
 
 stop_pgctl(){
+   echo "Attempting to stop PostgreSQL..."
    if [[ "$OS" == "FreeBSD" ]]; then
-      su - postgres -c "$PGCTL_PATH -D $DATA_DIRECTORY -l $PGCTL_LOG_FILE stop"
+      su - postgres -c "$PGCTL_PATH -D $DATA_DIRECTORY -l $PGCTL_LOG_FILE stop" || echo "PostgreSQL was already stopped"
    else
-      pg_ctl -D $DATA_DIRECTORY -l $PGCTL_LOG_FILE stop
+      pg_ctl -D $DATA_DIRECTORY -l $PGCTL_LOG_FILE stop || echo "PostgreSQL was already stopped"
    fi
 }
 
