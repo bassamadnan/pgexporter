@@ -15,6 +15,7 @@ if (CHECK_FOUND)
 
   add_compile_options(-O0)
   add_compile_options(-DDEBUG)
+  add_compile_options(-Wno-unused-parameter)
   
   if (CMAKE_BUILD_TYPE MATCHES Debug)
     if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
