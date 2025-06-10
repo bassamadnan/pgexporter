@@ -132,13 +132,24 @@ check_pg_ctl() {
    fi
 }
 
+# FIXED: Proper error handling like pgmoneta
 stop_pgctl(){
    echo "Attempting to stop PostgreSQL..."
+   set +e  # Allow failures here since server might already be stopped
    if [[ "$OS" == "FreeBSD" ]]; then
-      su - postgres -c "$PGCTL_PATH -D $DATA_DIRECTORY -l $PGCTL_LOG_FILE stop" || echo "PostgreSQL was already stopped"
+      su - postgres -c "$PGCTL_PATH -D $DATA_DIRECTORY -l $PGCTL_LOG_FILE stop"
+      stop_result=$?
    else
-      pg_ctl -D $DATA_DIRECTORY -l $PGCTL_LOG_FILE stop || echo "PostgreSQL was already stopped"
+      pg_ctl -D $DATA_DIRECTORY -l $PGCTL_LOG_FILE stop
+      stop_result=$?
    fi
+   
+   if [ $stop_result -ne 0 ]; then
+      echo "PostgreSQL stop returned code $stop_result (may have been already stopped)"
+   else
+      echo "PostgreSQL stopped successfully"
+   fi
+   set -e
 }
 
 run_as_postgres() {
@@ -403,8 +414,36 @@ EOF
     chown -R postgres:postgres $CONFIGURATION_DIRECTORY
     chown -R postgres:postgres $PGEXPORTER_LOG_FILE
    fi
-   run_as_postgres "$EXECUTABLE_DIRECTORY/pgexporter-admin master-key -P $PGPASSWORD || true"
+   
+   # ENHANCED: Better error handling and debugging for users config
+   echo "=== DEBUG: Creating master key ==="
+   run_as_postgres "$EXECUTABLE_DIRECTORY/pgexporter-admin master-key -P $PGPASSWORD"
+   master_key_result=$?
+   echo "Master key creation result: $master_key_result"
+   
+   echo "=== DEBUG: Adding user to config ==="
    run_as_postgres "$EXECUTABLE_DIRECTORY/pgexporter-admin -f $CONFIGURATION_DIRECTORY/pgexporter_users.conf -U pgexporter -P $PGPASSWORD user add"
+   user_add_result=$?
+   echo "User add result: $user_add_result"
+   
+   # ENHANCED: Verify the users config file was created properly
+   echo "=== DEBUG: Verifying users config file ==="
+   if [[ -f "$CONFIGURATION_DIRECTORY/pgexporter_users.conf" ]]; then
+      echo "Users config file exists"
+      run_as_postgres "ls -la $CONFIGURATION_DIRECTORY/pgexporter_users.conf"
+      file_size=$(run_as_postgres "wc -c < $CONFIGURATION_DIRECTORY/pgexporter_users.conf")
+      echo "Users config file size: $file_size bytes"
+      if [[ $file_size -eq 0 ]]; then
+         echo "file exists but is empty"
+         exit 1
+      fi
+   else
+      echo "ERROR: Users config file missing!"
+      echo "Expected: $CONFIGURATION_DIRECTORY/pgexporter_users.conf"
+      run_as_postgres "ls -la $CONFIGURATION_DIRECTORY/"
+      exit 1
+   fi
+   
    echo "add user pgexporter to pgexporter_users.conf file ... ok"
    echo ""
 }
@@ -423,6 +462,21 @@ execute_testcases() {
       exit 1
    fi
    echo "starting pgexporter server in daemon mode"
+   
+   # ENHANCED: Add final verification before starting pgexporter
+   echo "=== DEBUG: Final config verification before starting pgexporter ==="
+   run_as_postgres "ls -la $CONFIGURATION_DIRECTORY/"
+   echo "Contents of pgexporter.conf:"
+   run_as_postgres "cat $CONFIGURATION_DIRECTORY/pgexporter.conf"
+   echo "Users config file status:"
+   if [[ -f "$CONFIGURATION_DIRECTORY/pgexporter_users.conf" ]]; then
+      run_as_postgres "ls -la $CONFIGURATION_DIRECTORY/pgexporter_users.conf"
+      run_as_postgres "wc -c $CONFIGURATION_DIRECTORY/pgexporter_users.conf"
+   else
+      echo "ERROR: Users config file missing at execution time!"
+      exit 1
+   fi
+   
    run_as_postgres "$EXECUTABLE_DIRECTORY/pgexporter -c $CONFIGURATION_DIRECTORY/pgexporter.conf -u $CONFIGURATION_DIRECTORY/pgexporter_users.conf -d"
    
    # Wait a moment for pgexporter to start
