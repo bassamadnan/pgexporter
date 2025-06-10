@@ -31,7 +31,7 @@ jobs:
             libzstd-dev liblz4-dev bzip2 libbz2-dev pandoc texlive-base \
             texlive-latex-recommended texlive-fonts-recommended texlive-extra-utils \
             texlive-xetex texlive-fonts-extra wget graphviz doxygen \
-            check libcheck-dev
+            check
 
       - name: Install PostgreSQL
         run: |
