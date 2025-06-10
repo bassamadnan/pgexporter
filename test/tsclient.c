@@ -31,7 +31,9 @@
 #include <pgexporter.h>
 #include <configuration.h>
 #include <json.h>
+#include <logging.h>
 #include <management.h>
+#include <memory.h>
 #include <network.h>
 #include <queries.h>
 #include <security.h>
@@ -70,12 +72,16 @@ pgexporter_tsclient_init(char* base_dir)
 
     configuration_path = get_configuration_path();
 
+    // Initialize memory subsystem first
+    pgexporter_memory_init();
+
     // Create the shared memory for the configuration
     size = sizeof(struct configuration);
     if (pgexporter_create_shared_memory(size, HUGEPAGE_OFF, &shmem))
     {
         goto error;
     }
+    
     pgexporter_init_configuration(shmem);
     
     // Try reading configuration from the configuration path
@@ -88,6 +94,17 @@ pgexporter_tsclient_init(char* base_dir)
         }
 
         config = (struct configuration*)shmem;
+        
+        // Initialize logging subsystem
+        if (pgexporter_init_logging())
+        {
+            goto error;
+        }
+
+        if (pgexporter_start_logging())
+        {
+            goto error;
+        }
     }
     else
     {
@@ -107,8 +124,17 @@ pgexporter_tsclient_destroy()
 {
     size_t size;
 
+    // Stop logging
+    pgexporter_stop_logging();
+    
+    // Destroy shared memory
     size = sizeof(struct configuration);
-    return pgexporter_destroy_shared_memory(shmem, size);
+    pgexporter_destroy_shared_memory(shmem, size);
+    
+    // Destroy memory subsystem
+    pgexporter_memory_destroy();
+    
+    return 0;
 }
 
 int
@@ -210,6 +236,190 @@ error:
     return 1;
 }
 
+int
+pgexporter_tsclient_test_db_connection()
+{
+    struct configuration* config;
+    int connected_servers = 0;
+
+    config = (struct configuration*)shmem;
+
+    printf("Testing database connections...\n");
+    
+    // Validate configuration first
+    if (pgexporter_validate_configuration(shmem))
+    {
+        printf("Configuration validation failed\n");
+        return 1;
+    }
+    
+    if (pgexporter_validate_users_configuration(shmem))
+    {
+        printf("Users configuration validation failed\n");
+        return 1;
+    }
+    
+    printf("Number of configured servers: %d\n", config->number_of_servers);
+    
+    // Test opening connections
+    pgexporter_open_connections();
+
+    // Check how many servers are connected
+    for (int i = 0; i < config->number_of_servers; i++)
+    {
+        printf("Server %s: ", config->servers[i].name);
+        if (config->servers[i].fd != -1)
+        {
+            printf("Connected (fd=%d)\n", config->servers[i].fd);
+            connected_servers++;
+        }
+        else
+        {
+            printf("Not connected\n");
+        }
+    }
+
+    printf("Total connected servers: %d/%d\n", connected_servers, config->number_of_servers);
+
+    // Clean up connections
+    pgexporter_close_connections();
+
+    // Return success if at least one server connected
+    return (connected_servers > 0) ? 0 : 1;
+}
+
+int
+pgexporter_tsclient_test_version_query()
+{
+    struct configuration* config;
+    struct query* query = NULL;
+    struct tuple* current = NULL;
+    int ret = 1;
+    int server_tested = 0;
+
+    config = (struct configuration*)shmem;
+
+    printf("Testing PostgreSQL version query...\n");
+    
+    // Validate configuration first
+    if (pgexporter_validate_configuration(shmem))
+    {
+        printf("Configuration validation failed\n");
+        return 1;
+    }
+    
+    if (pgexporter_validate_users_configuration(shmem))
+    {
+        printf("Users configuration validation failed\n");
+        return 1;
+    }
+    
+    // Open connections first
+    pgexporter_open_connections();
+
+    // Test version query on first available server
+    for (int i = 0; i < config->number_of_servers && !server_tested; i++)
+    {
+        if (config->servers[i].fd != -1)
+        {
+            printf("Testing version query on server %s...\n", config->servers[i].name);
+            
+            if (pgexporter_query_version(i, &query) == 0 && query != NULL)
+            {
+                current = query->tuples;
+                if (current != NULL)
+                {
+                    printf("PostgreSQL Version: %s.%s\n", 
+                           pgexporter_get_column(0, current),
+                           pgexporter_get_column(1, current));
+                    ret = 0;
+                    server_tested = 1;
+                }
+                else
+                {
+                    printf("No version data returned\n");
+                }
+                pgexporter_free_query(query);
+            }
+            else
+            {
+                printf("Failed to execute version query\n");
+            }
+        }
+    }
+
+    if (!server_tested)
+    {
+        printf("No servers available for version query test\n");
+    }
+
+    // Clean up connections
+    pgexporter_close_connections();
+
+    return ret;
+}
+
+int
+pgexporter_tsclient_test_extension_path()
+{
+    struct configuration* config;
+    char* bin_path = NULL;
+    int ret = 1;
+
+    config = (struct configuration*)shmem;
+
+    printf("Testing extension path setup...\n");
+    
+    // Validate configuration first
+    if (pgexporter_validate_configuration(shmem))
+    {
+        printf("Configuration validation failed\n");
+        return 1;
+    }
+    
+    // Use a real program path from the project directory
+    char* program_path = NULL;
+    program_path = pgexporter_append(program_path, project_directory);
+    program_path = pgexporter_append(program_path, "/src/pgexporter");
+    
+    printf("Using program path: %s\n", program_path);
+    
+    // Test extension path setup
+    if (pgexporter_setup_extensions_path(config, program_path, &bin_path) == 0)
+    {
+        if (bin_path != NULL && strlen(bin_path) > 0)
+        {
+            printf("Extension path setup successful: %s\n", bin_path);
+            ret = 0;
+        }
+        else
+        {
+            printf("Extension path setup returned success but path is empty or null\n");
+        }
+    }
+    else
+    {
+        printf("Extension path setup failed\n");
+    }
+
+    // Print the path regardless of success/failure for debugging
+    if (bin_path != NULL)
+    {
+        printf("Final extension path: %s\n", bin_path);
+        free(bin_path);
+    }
+    else
+    {
+        printf("Extension path is NULL\n");
+    }
+    
+    // Print the configured extensions path from config
+    printf("Configured extensions path: %s\n", config->extensions_path);
+
+    free(program_path);
+    return ret;
+}
+
 static int 
 check_output_outcome(int socket)
 {
@@ -269,145 +479,4 @@ get_configuration_path()
    memcpy(configuration_path + project_directory_length, PGEXPORTER_CONFIGURATION_TRAIL, configuration_trail_length);
 
    return configuration_path;
-}
-
-int
-pgexporter_tsclient_test_db_connection()
-{
-    struct configuration* config;
-    int connected_servers = 0;
-
-    config = (struct configuration*)shmem;
-
-    printf("Testing database connections...\n");
-    
-    // Test opening connections
-    pgexporter_open_connections();
-
-    // Check how many servers are connected
-    for (int i = 0; i < config->number_of_servers; i++)
-    {
-        printf("Server %s: ", config->servers[i].name);
-        if (config->servers[i].fd != -1)
-        {
-            printf("Connected (fd=%d)\n", config->servers[i].fd);
-            connected_servers++;
-        }
-        else
-        {
-            printf("Not connected\n");
-        }
-    }
-
-    printf("Total connected servers: %d/%d\n", connected_servers, config->number_of_servers);
-
-    // Clean up connections
-    pgexporter_close_connections();
-
-    // Return success if at least one server connected
-    return (connected_servers > 0) ? 0 : 1;
-}
-
-int
-pgexporter_tsclient_test_version_query()
-{
-    struct configuration* config;
-    struct query* query = NULL;
-    struct tuple* current = NULL;
-    int ret = 1;
-    int server_tested = 0;
-
-    config = (struct configuration*)shmem;
-
-    printf("Testing PostgreSQL version query...\n");
-    
-    // Open connections first
-    pgexporter_open_connections();
-
-    // Test version query on first available server
-    for (int i = 0; i < config->number_of_servers && !server_tested; i++)
-    {
-        if (config->servers[i].fd != -1)
-        {
-            printf("Testing version query on server %s...\n", config->servers[i].name);
-            
-            if (pgexporter_query_version(i, &query) == 0 && query != NULL)
-            {
-                current = query->tuples;
-                if (current != NULL)
-                {
-                    printf("PostgreSQL Version: %s.%s\n", 
-                           pgexporter_get_column(0, current),
-                           pgexporter_get_column(1, current));
-                    ret = 0;
-                    server_tested = 1;
-                }
-                else
-                {
-                    printf("No version data returned\n");
-                }
-                pgexporter_free_query(query);
-            }
-            else
-            {
-                printf("Failed to execute version query\n");
-            }
-        }
-    }
-
-    if (!server_tested)
-    {
-        printf("No servers available for version query test\n");
-    }
-
-    // Clean up connections
-    pgexporter_close_connections();
-
-    return ret;
-}
-
-int
-pgexporter_tsclient_test_extension_path()
-{
-    struct configuration* config;
-    char* bin_path = NULL;
-    int ret = 1;
-
-    config = (struct configuration*)shmem;
-
-    printf("Testing extension path setup...\n");
-    
-    // Get the program path from argv (stored during init)
-    char program_path[] = "/path/to/pgexporter"; // This would be from argv[0] in real scenario
-    
-    // Test extension path setup
-    if (pgexporter_setup_extensions_path(config, program_path, &bin_path) == 0)
-    {
-        if (bin_path != NULL && strlen(bin_path) > 0)
-        {
-            printf("Extension path setup successful: %s\n", bin_path);
-            ret = 0;
-        }
-        else
-        {
-            printf("Extension path setup returned success but path is empty or null\n");
-        }
-    }
-    else
-    {
-        printf("Extension path setup failed\n");
-    }
-
-    // Print the path regardless of success/failure for debugging
-    if (bin_path != NULL)
-    {
-        printf("Final extension path: %s\n", bin_path);
-        free(bin_path);
-    }
-    else
-    {
-        printf("Extension path is NULL\n");
-    }
-
-    return ret;
 }
