@@ -229,7 +229,8 @@ jobs:
               hs-pandoc \
               texlive-base \
               texlive-texmf \
-              graphviz
+              graphviz \
+              pkgconf
 
       - name: Build Project
         shell: freebsd {0}
