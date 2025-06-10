@@ -48,7 +48,7 @@ if (CHECK_FOUND)
   endif()
 
   target_include_directories(pgexporter_test PRIVATE ${CHECK_INCLUDE_DIRS})
-  target_compile_options(pgexporter_test PRIVATE ${CHECK_CFLAGS_OTHER})
+  target_compile_options(pgexporter_test PRIVATE ${CHECK_CFLAGS_OTHER} -Wno-error)
 
 endif()
 
