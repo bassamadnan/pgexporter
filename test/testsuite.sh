@@ -343,6 +343,13 @@ initialize_cluster() {
    else
       echo "create user pgexporter ... ok"
    fi
+   err_out=$(psql -h /tmp -p $PORT -U $PSQL_USER -d postgres -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;" 2>&1)
+   if [ $? -ne 0 ]; then
+      echo "create extension pg_stat_statements ... $err_out"
+      echo "Warning: pg_stat_statements extension not available"
+   else
+      echo "create extension pg_stat_statements ... ok"
+   fi
    err_out=$(psql -h /tmp -p $PORT -U $PSQL_USER -d postgres -c "GRANT pg_monitor TO pgexporter;" 2>&1)
    if [ $? -ne 0 ]; then
       echo "grant pg_monitor to pgexporter ... $err_out"
@@ -396,6 +403,8 @@ pgexporter_initialize_configuration() {
 [pgexporter]
 host = localhost
 metrics = 5002
+bridge = 5003
+bridge_endpoints = localhost:5002
 
 log_type = file
 log_level = debug5

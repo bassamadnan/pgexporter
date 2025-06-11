@@ -38,6 +38,22 @@ START_TEST(test_pgexporter_http_metrics)
 }
 END_TEST
 
+START_TEST(test_pgexporter_bridge_endpoint)
+{
+   int found = 0;
+   found = !pgexporter_tsclient_test_bridge_endpoint();
+   ck_assert_msg(found, "pgexporter bridge endpoint test failed");
+}
+END_TEST
+
+START_TEST(test_pgexporter_extension_detection)
+{
+   int found = 0;
+   found = !pgexporter_tsclient_test_extension_detection();
+   ck_assert_msg(found, "pgexporter extension detection test failed");
+}
+END_TEST
+
 // Test that shutdown command works (this should be last test)
 START_TEST(test_pgexporter_shutdown)
 {
@@ -59,6 +75,10 @@ pgexporter_test3_suite()
 
    tcase_set_timeout(tc_core, 60);
    tcase_add_test(tc_core, test_pgexporter_http_metrics);
+   tcase_add_test(tc_core, test_pgexporter_http_metrics);
+   tcase_add_test(tc_core, test_pgexporter_bridge_endpoint);
+   tcase_add_test(tc_core, test_pgexporter_extension_detection);
+
    tcase_add_test(tc_core, test_pgexporter_shutdown);
 
    suite_add_tcase(s, tc_core);
