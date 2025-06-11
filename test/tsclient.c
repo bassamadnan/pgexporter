@@ -489,29 +489,34 @@ pgexporter_tsclient_test_http_metrics()
     config = (struct configuration*)shmem;
 
     printf("=== Testing HTTP /metrics endpoint ===\n");
+    printf("Attempting to connect to localhost:%d\n", config->metrics);
 
     if (pgexporter_http_connect("localhost", config->metrics, false, &http))
     {
-        printf("Failed to connect to HTTP endpoint localhost:%d\n", config->metrics);
+        printf("ERROR: Failed to connect to HTTP endpoint localhost:%d\n", config->metrics);
         goto error;
     }
+    printf("Successfully connected to HTTP endpoint\n");
 
+    printf("Executing HTTP GET /metrics request\n");
     if (pgexporter_http_get(http, "localhost", "/metrics"))
     {
-        printf("Failed to execute HTTP GET /metrics\n");
+        printf("ERROR: Failed to execute HTTP GET /metrics\n");
         goto error;
     }
+    printf("HTTP GET request completed\n");
 
     if (http->body == NULL)
     {
-        printf("HTTP response body is NULL\n");
+        printf("ERROR: HTTP response body is NULL\n");
         goto error;
     }
+    printf("HTTP response body received\n");
 
     response_body = strdup(http->body);
     if (response_body == NULL)
     {
-        printf("Failed to duplicate response body\n");
+        printf("ERROR: Failed to duplicate response body\n");
         goto error;
     }
 
@@ -520,10 +525,11 @@ pgexporter_tsclient_test_http_metrics()
 
     if (response_size == 0)
     {
-        printf("Response size is 0\n");
+        printf("ERROR: Response size is 0\n");
         goto error;
     }
 
+    printf("Parsing response for core metrics\n");
     line = strtok_r(response_body, "\n", &saveptr);
     while (line != NULL)
     {
@@ -560,23 +566,27 @@ pgexporter_tsclient_test_http_metrics()
         printf("Last line of response: %s\n", last_line);
     }
 
+    printf("Validating metrics\n");
     if (!found_first_metric)
     {
-        printf("Failed to find first core metric (pgexporter_state)\n");
+        printf("ERROR: Failed to find first core metric (pgexporter_state)\n");
         goto error;
     }
+    printf("First core metric validation passed\n");
 
     if (!found_version_metric)
     {
-        printf("Failed to find PostgreSQL version metric\n");
+        printf("ERROR: Failed to find PostgreSQL version metric\n");
         goto error;
     }
+    printf("PostgreSQL version metric found\n");
 
     if (postgresql_version != 17)
     {
-        printf("Expected PostgreSQL version 17, got %d\n", postgresql_version);
+        printf("ERROR: Expected PostgreSQL version 17, got %d\n", postgresql_version);
         goto error;
     }
+    printf("PostgreSQL version validation passed\n");
 
     printf("HTTP metrics test completed successfully\n");
     ret = 0;
