@@ -626,10 +626,10 @@ pgexporter_tsclient_test_bridge_endpoint()
     }
     printf("Successfully connected to bridge endpoint\n");
 
-    printf("Executing HTTP GET / request\n");
-    if (pgexporter_http_get(http, "localhost", "/"))
+    printf("Executing HTTP GET /metrics request\n");
+    if (pgexporter_http_get(http, "localhost", "/metrics"))
     {
-        printf("ERROR: Failed to execute HTTP GET /\n");
+        printf("ERROR: Failed to execute HTTP GET /metrics\n");
         goto error;
     }
     printf("HTTP GET request completed\n");
