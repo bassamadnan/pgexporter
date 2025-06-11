@@ -600,6 +600,9 @@ error:
 int
 pgexporter_tsclient_test_bridge_endpoint()
 {
+    printf("DEBUG: Bridge test function entry\n");
+    fflush(stdout);
+    
     struct http* http = NULL;
     struct configuration* config;
     char* response_body = NULL;
@@ -612,10 +615,29 @@ pgexporter_tsclient_test_bridge_endpoint()
     int postgresql_version = 0;
     int ret = 1;
 
+    printf("DEBUG: Getting config pointer\n");
+    fflush(stdout);
+    
     config = (struct configuration*)shmem;
+    
+    if (config == NULL)
+    {
+        printf("ERROR: config is NULL\n");
+        return 1;
+    }
+    
+    printf("DEBUG: Config loaded successfully\n");
+    fflush(stdout);
 
     printf("=== Testing bridge endpoint ===\n");
     printf("Bridge port from config: %d\n", config->bridge);
+    
+    if (config->bridge == 0)
+    {
+        printf("ERROR: Bridge port is 0, bridge not configured\n");
+        return 1;
+    }
+    
     printf("Attempting to connect to localhost:%d\n", config->bridge);
 
     if (pgexporter_http_connect("localhost", config->bridge, false, &http))
@@ -725,11 +747,19 @@ pgexporter_tsclient_test_bridge_endpoint()
     ret = 0;
 
 error:
+    printf("DEBUG: Bridge test cleanup\n");
+    fflush(stdout);
+    
     if (http != NULL)
     {
         pgexporter_http_disconnect(http);
+        free(http);
     }
     free(response_body);
+    
+    printf("DEBUG: Bridge test returning %d\n", ret);
+    fflush(stdout);
+    
     return ret;
 }
 
