@@ -415,7 +415,6 @@ EOF
     chown -R postgres:postgres $PGEXPORTER_LOG_FILE
    fi
    
-   # ENHANCED: Better error handling and debugging for users config
    echo "=== DEBUG: Creating master key ==="
    run_as_postgres "$EXECUTABLE_DIRECTORY/pgexporter-admin master-key -P $PGPASSWORD"
    master_key_result=$?
