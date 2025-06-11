@@ -412,8 +412,6 @@ EOF
    if [[ "$OS" == "FreeBSD" ]]; then
     chown -R postgres:postgres $CONFIGURATION_DIRECTORY
     chown -R postgres:postgres $PGEXPORTER_LOG_FILE
-    chmod 644 $CONFIGURATION_DIRECTORY/pgexporter_users.conf
-    chmod 644 $CONFIGURATION_DIRECTORY/pgexporter.conf
    fi
    
    echo "=== DEBUG: Creating master key ==="
@@ -481,7 +479,7 @@ execute_testcases() {
    sleep 2
    
    ### RUN TESTCASES ###
-   $TEST_DIRECTORY/pgexporter_test $PROJECT_DIRECTORY
+   run_as_postgres $TEST_DIRECTORY/pgexporter_test $PROJECT_DIRECTORY
    if [ $? -ne 0 ]; then
       # Kill pgexporter if tests failed
       pkill -f pgexporter || true
