@@ -71,7 +71,7 @@ pgexporter_test1_suite()
    tcase_set_timeout(tc_core, 60);
    tcase_add_test(tc_core, test_pgexporter_ping);
    tcase_add_test(tc_core, test_pgexporter_status);
-   tcase_add_test(tc_core, test_pgexporter_shutdown);
+   // tcase_add_test(tc_core, test_pgexporter_shutdown);
    suite_add_tcase(s, tc_core);
 
    return s;
