@@ -914,6 +914,8 @@ pgexporter_http_disconnect(struct http* http)
       }
    }
 
+   free(http);
+
    if (status != 0)
    {
       goto error;

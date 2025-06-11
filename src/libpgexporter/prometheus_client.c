@@ -156,7 +156,6 @@ error:
    if (http != NULL)
    {
       pgexporter_http_disconnect(http);
-      free(http);
    }
 
    return 1;
