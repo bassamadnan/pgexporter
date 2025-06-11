@@ -132,7 +132,6 @@ check_pg_ctl() {
    fi
 }
 
-# FIXED: Proper error handling like pgmoneta
 stop_pgctl(){
    echo "Attempting to stop PostgreSQL..."
    set +e  # Allow failures here since server might already be stopped
@@ -413,6 +412,8 @@ EOF
    if [[ "$OS" == "FreeBSD" ]]; then
     chown -R postgres:postgres $CONFIGURATION_DIRECTORY
     chown -R postgres:postgres $PGEXPORTER_LOG_FILE
+    chmod 644 $CONFIGURATION_DIRECTORY/pgexporter_users.conf
+    chmod 644 $CONFIGURATION_DIRECTORY/pgexporter.conf
    fi
    
    echo "=== DEBUG: Creating master key ==="
@@ -425,7 +426,6 @@ EOF
    user_add_result=$?
    echo "User add result: $user_add_result"
    
-   # ENHANCED: Verify the users config file was created properly
    echo "=== DEBUG: Verifying users config file ==="
    if [[ -f "$CONFIGURATION_DIRECTORY/pgexporter_users.conf" ]]; then
       echo "Users config file exists"
@@ -462,7 +462,6 @@ execute_testcases() {
    fi
    echo "starting pgexporter server in daemon mode"
    
-   # ENHANCED: Add final verification before starting pgexporter
    echo "=== DEBUG: Final config verification before starting pgexporter ==="
    run_as_postgres "ls -la $CONFIGURATION_DIRECTORY/"
    echo "Contents of pgexporter.conf:"
