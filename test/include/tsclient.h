@@ -105,6 +105,13 @@ pgexporter_tsclient_test_version_query();
 int
 pgexporter_tsclient_test_extension_path();
 
+/**
+ * Test HTTP metrics endpoint functionality
+ * @return 0 upon success, otherwise 1
+ */
+int
+pgexporter_tsclient_test_http_metrics();
+
 #ifdef __cplusplus
 }
 #endif

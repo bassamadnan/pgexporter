@@ -31,6 +31,7 @@
 #include <pgexporter.h>
 #include <configuration.h>
 #include <extension.h>
+#include <http.h>
 #include <json.h>
 #include <logging.h>
 #include <management.h>
@@ -468,4 +469,123 @@ get_configuration_path()
    memcpy(configuration_path + project_directory_length, PGEXPORTER_CONFIGURATION_TRAIL, configuration_trail_length);
 
    return configuration_path;
+}
+
+int
+pgexporter_tsclient_test_http_metrics()
+{
+    struct http* http = NULL;
+    struct configuration* config;
+    char* response_body = NULL;
+    size_t response_size = 0;
+    char* line = NULL;
+    char* saveptr = NULL;
+    char* last_line = NULL;
+    bool found_first_metric = false;
+    bool found_version_metric = false;
+    int postgresql_version = 0;
+    int ret = 1;
+
+    config = (struct configuration*)shmem;
+
+    printf("=== Testing HTTP /metrics endpoint ===\n");
+
+    if (pgexporter_http_connect("localhost", config->metrics, false, &http))
+    {
+        printf("Failed to connect to HTTP endpoint localhost:%d\n", config->metrics);
+        goto error;
+    }
+
+    if (pgexporter_http_get(http, "localhost", "/metrics"))
+    {
+        printf("Failed to execute HTTP GET /metrics\n");
+        goto error;
+    }
+
+    if (http->body == NULL)
+    {
+        printf("HTTP response body is NULL\n");
+        goto error;
+    }
+
+    response_body = strdup(http->body);
+    if (response_body == NULL)
+    {
+        printf("Failed to duplicate response body\n");
+        goto error;
+    }
+
+    response_size = strlen(response_body);
+    printf("Response size: %zu bytes\n", response_size);
+
+    if (response_size == 0)
+    {
+        printf("Response size is 0\n");
+        goto error;
+    }
+
+    line = strtok_r(response_body, "\n", &saveptr);
+    while (line != NULL)
+    {
+        if (pgexporter_starts_with(line, "pgexporter_state 1"))
+        {
+            found_first_metric = true;
+            printf("Found first core metric: %s\n", line);
+        }
+
+        if (pgexporter_starts_with(line, "pgexporter_postgresql_version"))
+        {
+            char* version_start = strstr(line, "version=\"");
+            if (version_start != NULL)
+            {
+                version_start += 9;
+                char* version_end = strchr(version_start, '"');
+                if (version_end != NULL)
+                {
+                    *version_end = '\0';
+                    postgresql_version = atoi(version_start);
+                    found_version_metric = true;
+                    printf("Found PostgreSQL version metric: version=%d\n", postgresql_version);
+                    *version_end = '"';
+                }
+            }
+        }
+
+        last_line = line;
+        line = strtok_r(NULL, "\n", &saveptr);
+    }
+
+    if (last_line != NULL)
+    {
+        printf("Last line of response: %s\n", last_line);
+    }
+
+    if (!found_first_metric)
+    {
+        printf("Failed to find first core metric (pgexporter_state)\n");
+        goto error;
+    }
+
+    if (!found_version_metric)
+    {
+        printf("Failed to find PostgreSQL version metric\n");
+        goto error;
+    }
+
+    if (postgresql_version != 17)
+    {
+        printf("Expected PostgreSQL version 17, got %d\n", postgresql_version);
+        goto error;
+    }
+
+    printf("HTTP metrics test completed successfully\n");
+    ret = 0;
+
+error:
+    if (http != NULL)
+    {
+        pgexporter_http_disconnect(http);
+    }
+    free(response_body);
+    return ret;
 }

@@ -24,49 +24,21 @@
  * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR
  * TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
  */
-#include <tsclient.h>
 
-#include "testcases/pgexporter_test_1.h"
-#include "testcases/pgexporter_test_2.h"
-#include "testcases/pgexporter_test_3.h"
+#ifndef PGEXPORTER_TEST3_H
+#define PGEXPORTER_TEST3_H
 
-int
-main(int argc, char* argv[])
-{
+#include <check.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
-   if (argc != 2)
-   {
-      printf("Usage: %s <project_directory>\n", argv[0]);
-      return 1;
-   }
+/**
+ * Set up a suite of test cases for pgexporter HTTP functionality
+ * @return The result
+ */
+Suite*
+pgexporter_test3_suite();
 
-   int number_failed;
-   Suite* s1;
-   Suite* s2;
-   Suite* s3;
-   SRunner* sr;
-
-   if (pgexporter_tsclient_init(argv[1]))
-   {
-      goto done;
-   }
-
-   s1 = pgexporter_test1_suite();
-   s2 = pgexporter_test2_suite();
-   s3 = pgexporter_test3_suite();
-
-   sr = srunner_create(s1);
-   srunner_add_suite(sr, s2);
-   srunner_add_suite(sr, s3);
-
-   srunner_run_all(sr, CK_VERBOSE);
-   number_failed = srunner_ntests_failed(sr);
-   srunner_free(sr);
-
-done:
-   pgexporter_tsclient_destroy();
-
-   return (number_failed == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
-}
+#endif // PGEXPORTER_TEST3_H
