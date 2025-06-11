@@ -38,6 +38,15 @@ START_TEST(test_pgexporter_http_metrics)
 }
 END_TEST
 
+// Test that shutdown command works (this should be last test)
+START_TEST(test_pgexporter_shutdown)
+{
+   int found = 0;
+   found = !pgexporter_tsclient_execute_shutdown();
+   ck_assert_msg(found, "pgexporter shutdown failed");
+}
+END_TEST
+
 Suite*
 pgexporter_test3_suite()
 {
@@ -50,6 +59,8 @@ pgexporter_test3_suite()
 
    tcase_set_timeout(tc_core, 60);
    tcase_add_test(tc_core, test_pgexporter_http_metrics);
+   tcase_add_test(tc_core, test_pgexporter_shutdown);
+
    suite_add_tcase(s, tc_core);
 
    return s;
