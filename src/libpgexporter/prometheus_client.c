@@ -754,7 +754,7 @@ add_line(struct prometheus_metric* metric, char* line, int endpoint, time_t time
       else if (strlen(token) > 0)
       {
          /* Assuming of the form key="value" */
-         printf("About to find token\n", token);
+         printf("About to find token\n");
          fflush(stdout);
          sscanf(token, "%127[^=]", key);
          sscanf(token + strlen(key) + 2, "%127[^\"]", value);
