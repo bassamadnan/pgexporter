@@ -479,8 +479,15 @@ test_bridge_endpoint_with_curl() {
    # Create a temporary file for curl output
    CURL_OUTPUT_FILE="$LOG_DIRECTORY/bridge_curl_output.txt"
    
-   timeout 15 curl -v --connect-timeout 10 --max-time 30 http://localhost:5003/metrics > "$CURL_OUTPUT_FILE" 2>&1
-   CURL_EXIT_CODE=$?
+   # Check if timeout command exists (not available on macOS by default)
+   if command -v timeout >/dev/null 2>&1; then
+      timeout 15 curl -v --connect-timeout 10 --max-time 30 http://localhost:5003/metrics > "$CURL_OUTPUT_FILE" 2>&1
+      CURL_EXIT_CODE=$?
+   else
+      # macOS and other systems without timeout - use curl's built-in timeouts
+      curl -v --connect-timeout 10 --max-time 30 http://localhost:5003/metrics > "$CURL_OUTPUT_FILE" 2>&1
+      CURL_EXIT_CODE=$?
+   fi
    
    echo "Curl exit code: $CURL_EXIT_CODE"
    echo "=== Curl output ==="
@@ -515,8 +522,14 @@ test_bridge_endpoint_with_curl() {
       echo "Testing if main metrics endpoint works..."
       MAIN_CURL_OUTPUT_FILE="$LOG_DIRECTORY/main_curl_output.txt"
       
-      timeout 10 curl -v --connect-timeout 5 --max-time 15 http://localhost:5002/metrics > "$MAIN_CURL_OUTPUT_FILE" 2>&1
-      MAIN_CURL_EXIT_CODE=$?
+      # Use same timeout handling for main endpoint
+      if command -v timeout >/dev/null 2>&1; then
+         timeout 10 curl -v --connect-timeout 5 --max-time 15 http://localhost:5002/metrics > "$MAIN_CURL_OUTPUT_FILE" 2>&1
+         MAIN_CURL_EXIT_CODE=$?
+      else
+         curl -v --connect-timeout 5 --max-time 15 http://localhost:5002/metrics > "$MAIN_CURL_OUTPUT_FILE" 2>&1
+         MAIN_CURL_EXIT_CODE=$?
+      fi
       echo "Main endpoint curl exit code: $MAIN_CURL_EXIT_CODE"
       
       if [ $MAIN_CURL_EXIT_CODE -eq 0 ]; then
