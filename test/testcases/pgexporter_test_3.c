@@ -74,8 +74,8 @@ pgexporter_test3_suite()
    tc_core = tcase_create("Core");
 
    tcase_set_timeout(tc_core, 60);
-   tcase_add_test(tc_core, test_pgexporter_http_metrics);
    tcase_add_test(tc_core, test_pgexporter_bridge_endpoint);
+   tcase_add_test(tc_core, test_pgexporter_http_metrics);
    tcase_add_test(tc_core, test_pgexporter_extension_detection);
 
    tcase_add_test(tc_core, test_pgexporter_shutdown);
