@@ -229,7 +229,11 @@ res:
          // Get data from the response message
          if (msg_response != NULL && msg_response->data != NULL)
          {
+            char* temp = malloc(msg_response->length + 1); // 1 for the '\0'
+            memcpy(temp, msg_response->data, msg_response->length);
+            temp[msg_response->length] = '\0';
             response = pgexporter_append(response, (char*)msg_response->data);
+            free(temp);
          }
          pgexporter_clear_message();
          goto res;
