@@ -232,7 +232,7 @@ res:
             char* temp = malloc(msg_response->length + 1); // 1 for the '\0'
             memcpy(temp, msg_response->data, msg_response->length);
             temp[msg_response->length] = '\0';
-            response = pgexporter_append(response, (char*)msg_response->data);
+            response = pgexporter_append(response, temp);
             free(temp);
          }
          pgexporter_clear_message();
