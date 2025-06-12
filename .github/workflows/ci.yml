@@ -31,7 +31,7 @@ jobs:
             libzstd-dev liblz4-dev bzip2 libbz2-dev pandoc texlive-base \
             texlive-latex-recommended texlive-fonts-recommended texlive-extra-utils \
             texlive-xetex texlive-fonts-extra wget graphviz doxygen \
-            check
+            check curl
 
       - name: Install PostgreSQL
         run: |
@@ -67,6 +67,72 @@ jobs:
               cmake -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} ..
               make -j$(nproc)
         working-directory: /home/runner/work/pgexporter/pgexporter/
+
+      - name: Test Bridge Endpoint with curl
+        run: |
+          echo "=== Testing Bridge Endpoint Connectivity ==="
+          cd build
+          
+          # Start pgexporter in background
+          ./src/pgexporter -c pgexporter-testsuite/conf/pgexporter.conf -u pgexporter-testsuite/conf/pgexporter_users.conf &
+          PGEXPORTER_PID=$!
+          echo "Started pgexporter with PID: $PGEXPORTER_PID"
+          
+          # Wait for service to start
+          sleep 5
+          
+          # Check if pgexporter process is running
+          if kill -0 $PGEXPORTER_PID 2>/dev/null; then
+            echo "pgexporter process is running"
+          else
+            echo "ERROR: pgexporter process died"
+            exit 1
+          fi
+          
+          # Test if bridge port is listening
+          echo "Checking if bridge port 5003 is listening..."
+          netstat -tlnp | grep :5003 || echo "Port 5003 not found in netstat"
+          
+          # Test curl connectivity to bridge endpoint
+          echo "Testing curl to bridge endpoint..."
+          curl -v --connect-timeout 10 --max-time 30 http://localhost:5003/metrics > bridge_response.txt 2>&1
+          CURL_EXIT_CODE=$?
+          
+          echo "Curl exit code: $CURL_EXIT_CODE"
+          echo "=== Curl output ==="
+          cat bridge_response.txt
+          echo "=== End curl output ==="
+          
+          # Check response content
+          if [ $CURL_EXIT_CODE -eq 0 ]; then
+            echo "SUCCESS: curl connected to bridge endpoint"
+            echo "Response size: $(wc -c < bridge_response.txt) bytes"
+            echo "Response lines: $(wc -l < bridge_response.txt) lines"
+            
+            # Check for expected content
+            if grep -q "pgexporter_state" bridge_response.txt; then
+              echo "SUCCESS: Found expected pgexporter_state metric"
+            else
+              echo "WARNING: pgexporter_state metric not found in response"
+              echo "First 500 chars of response:"
+              head -c 500 bridge_response.txt
+            fi
+          else
+            echo "ERROR: curl failed to connect to bridge endpoint"
+            echo "Testing if main metrics endpoint works..."
+            curl -v --connect-timeout 5 --max-time 15 http://localhost:2345/metrics > main_response.txt 2>&1
+            echo "Main endpoint curl exit code: $?"
+          fi
+          
+          # Show process status
+          echo "=== Process status ==="
+          ps aux | grep pgexporter | grep -v grep
+          
+          # Cleanup
+          kill $PGEXPORTER_PID 2>/dev/null || true
+          wait $PGEXPORTER_PID 2>/dev/null || true
+        working-directory: /home/runner/work/pgexporter/pgexporter/
+        continue-on-error: true
 
       - name: Run Tests
         run: |
@@ -116,7 +182,7 @@ jobs:
         run: |
           brew update
           brew upgrade
-          brew install libev zstd lz4 bzip2 graphviz doxygen libyaml cmake docutils check pkg-config
+          brew install libev zstd lz4 bzip2 graphviz doxygen libyaml cmake docutils check pkg-config curl
           brew link --force bzip2
           brew link --force zstd
           brew link --force lz4
@@ -139,6 +205,80 @@ jobs:
             -DCMAKE_LIBRARY_PATH="$HOMEBREW_PREFIX/lib"
 
           make
+
+      - name: Test Bridge Endpoint with curl (macOS)
+        run: |
+          echo "=== Testing Bridge Endpoint Connectivity on macOS ==="
+          cd build
+          
+          # Start pgexporter in background
+          ./src/pgexporter -c pgexporter-testsuite/conf/pgexporter.conf -u pgexporter-testsuite/conf/pgexporter_users.conf &
+          PGEXPORTER_PID=$!
+          echo "Started pgexporter with PID: $PGEXPORTER_PID"
+          
+          # Wait for service to start
+          sleep 5
+          
+          # Check if pgexporter process is running
+          if kill -0 $PGEXPORTER_PID 2>/dev/null; then
+            echo "pgexporter process is running"
+          else
+            echo "ERROR: pgexporter process died"
+            ps aux | grep pgexporter | grep -v grep
+            exit 1
+          fi
+          
+          # Test if bridge port is listening
+          echo "Checking if bridge port 5003 is listening..."
+          netstat -an | grep :5003 || echo "Port 5003 not found in netstat"
+          lsof -i :5003 || echo "Port 5003 not found in lsof"
+          
+          # Test curl connectivity to bridge endpoint
+          echo "Testing curl to bridge endpoint..."
+          curl -v --connect-timeout 10 --max-time 30 http://localhost:5003/metrics > bridge_response_macos.txt 2>&1
+          CURL_EXIT_CODE=$?
+          
+          echo "Curl exit code: $CURL_EXIT_CODE"
+          echo "=== Curl output ==="
+          cat bridge_response_macos.txt
+          echo "=== End curl output ==="
+          
+          # Check response content
+          if [ $CURL_EXIT_CODE -eq 0 ]; then
+            echo "SUCCESS: curl connected to bridge endpoint on macOS"
+            echo "Response size: $(wc -c < bridge_response_macos.txt) bytes"
+            echo "Response lines: $(wc -l < bridge_response_macos.txt) lines"
+            
+            # Check for expected content
+            if grep -q "pgexporter_state" bridge_response_macos.txt; then
+              echo "SUCCESS: Found expected pgexporter_state metric"
+            else
+              echo "WARNING: pgexporter_state metric not found in response"
+              echo "First 500 chars of response:"
+              head -c 500 bridge_response_macos.txt
+            fi
+          else
+            echo "ERROR: curl failed to connect to bridge endpoint on macOS"
+            echo "Testing if main metrics endpoint works..."
+            curl -v --connect-timeout 5 --max-time 15 http://localhost:2345/metrics > main_response_macos.txt 2>&1
+            echo "Main endpoint curl exit code: $?"
+            echo "Main endpoint response:"
+            cat main_response_macos.txt 2>/dev/null || echo "No main response file"
+          fi
+          
+          # Show process status
+          echo "=== Process status ==="
+          ps aux | grep pgexporter | grep -v grep
+          
+          # Show system info
+          echo "=== System info ==="
+          uname -a
+          echo "Homebrew prefix: $HOMEBREW_PREFIX"
+          
+          # Cleanup
+          kill $PGEXPORTER_PID 2>/dev/null || true
+          wait $PGEXPORTER_PID 2>/dev/null || true
+        continue-on-error: true
 
       - name: Run Tests (Debug)
         run: |
@@ -239,6 +379,81 @@ jobs:
           cd $GITHUB_WORKSPACE/build
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} "$GITHUB_WORKSPACE"
           make -j$(sysctl -n hw.ncpu)
+
+      - name: Test Bridge Endpoint with curl (FreeBSD)
+        shell: freebsd {0}
+        run: |
+          echo "=== Testing Bridge Endpoint Connectivity on FreeBSD ==="
+          cd ${GITHUB_WORKSPACE}/build
+          
+          # Start pgexporter in background
+          ./src/pgexporter -c pgexporter-testsuite/conf/pgexporter.conf -u pgexporter-testsuite/conf/pgexporter_users.conf &
+          PGEXPORTER_PID=$!
+          echo "Started pgexporter with PID: $PGEXPORTER_PID"
+          
+          # Wait for service to start
+          sleep 5
+          
+          # Check if pgexporter process is running
+          if kill -0 $PGEXPORTER_PID 2>/dev/null; then
+            echo "pgexporter process is running"
+          else
+            echo "ERROR: pgexporter process died"
+            ps aux | grep pgexporter | grep -v grep
+            exit 1
+          fi
+          
+          # Test if bridge port is listening
+          echo "Checking if bridge port 5003 is listening..."
+          netstat -an | grep :5003 || echo "Port 5003 not found in netstat"
+          sockstat -l | grep :5003 || echo "Port 5003 not found in sockstat"
+          
+          # Test curl connectivity to bridge endpoint
+          echo "Testing curl to bridge endpoint..."
+          curl -v --connect-timeout 10 --max-time 30 http://localhost:5003/metrics > bridge_response_freebsd.txt 2>&1
+          CURL_EXIT_CODE=$?
+          
+          echo "Curl exit code: $CURL_EXIT_CODE"
+          echo "=== Curl output ==="
+          cat bridge_response_freebsd.txt
+          echo "=== End curl output ==="
+          
+          # Check response content
+          if [ $CURL_EXIT_CODE -eq 0 ]; then
+            echo "SUCCESS: curl connected to bridge endpoint on FreeBSD"
+            echo "Response size: $(wc -c < bridge_response_freebsd.txt) bytes"
+            echo "Response lines: $(wc -l < bridge_response_freebsd.txt) lines"
+            
+            # Check for expected content
+            if grep -q "pgexporter_state" bridge_response_freebsd.txt; then
+              echo "SUCCESS: Found expected pgexporter_state metric"
+            else
+              echo "WARNING: pgexporter_state metric not found in response"
+              echo "First 500 chars of response:"
+              head -c 500 bridge_response_freebsd.txt
+            fi
+          else
+            echo "ERROR: curl failed to connect to bridge endpoint on FreeBSD"
+            echo "Testing if main metrics endpoint works..."
+            curl -v --connect-timeout 5 --max-time 15 http://localhost:2345/metrics > main_response_freebsd.txt 2>&1
+            echo "Main endpoint curl exit code: $?"
+            echo "Main endpoint response:"
+            cat main_response_freebsd.txt 2>/dev/null || echo "No main response file"
+          fi
+          
+          # Show process status
+          echo "=== Process status ==="
+          ps aux | grep pgexporter | grep -v grep
+          
+          # Show system info
+          echo "=== System info ==="
+          uname -a
+          freebsd-version
+          
+          # Cleanup
+          kill $PGEXPORTER_PID 2>/dev/null || true
+          wait $PGEXPORTER_PID 2>/dev/null || true
+        continue-on-error: true
 
       - name: Run Tests
         shell: freebsd {0}
