@@ -754,27 +754,29 @@ add_line(struct prometheus_metric* metric, char* line, int endpoint, time_t time
       else if (strlen(token) > 0)
       {
          /* Assuming of the form key="value" */
-         size_t token_len = strlen(token);
-         size_t key_len = 0;
-
          sscanf(token, "%127[^=]", key);
-         key_len = strlen(key);
-
-         // Only apply strict validation if token looks like key="value" format
-         if (strchr(token, '=') != NULL && strchr(token, '"') != NULL)
+         
+         size_t key_len = strlen(key);
+         size_t token_len = strlen(token);
+         
+         if (key_len + 2 >= token_len)
          {
-            // This looks like key="value", so validate it
-            if (token_len >= key_len + 3)  // key + '="' minimum
-            {
-               sscanf(token + key_len + 2, "%127[^\"]", value);
+            // Token is too short, skip it
+            memset(key, 0, sizeof(key));
+            memset(value, 0, sizeof(value));
+         }
+         else
+         {
+            sscanf(token + strlen(key) + 2, "%127[^\"]", value);
 
-               if (strlen(key) > 0 && strlen(value) > 0)
-               {
-                  if (add_attribute(line_attrs, key, value))
-                  {
-                     goto error;
-                  }
-               }
+            if (strlen(key) == 0 || strlen(value) == 0)
+            {
+               goto error;
+            }
+
+            if (add_attribute(line_attrs, key, value))
+            {
+               goto error;
             }
          }
       }
