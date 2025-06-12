@@ -558,21 +558,48 @@ send_chunk(int client_fd, char* data)
    int status;
    char* m = NULL;
    struct message msg;
+   size_t data_len;
+   size_t header_size;
 
    memset(&msg, 0, sizeof(struct message));
 
-   m = malloc(20);
+   if (data == NULL)
+   {
+      goto error;
+   }
+
+   data_len = strlen(data);
+
+   // Calculate required size for chunk header:
+   // - Up to 16 hex digits for size_t (64-bit)
+   // - Plus "\r\n" (2 bytes)
+   // - Plus safety margin
+   header_size = 32;
+
+   m = malloc(header_size);
 
    if (m == NULL)
    {
       goto error;
    }
 
-   memset(m, 0, 20);
+   memset(m, 0, header_size);
 
-   sprintf(m, "%zX\r\n", strlen(data));
+   // Use snprintf for bounds checking
+   int written = snprintf(m, header_size, "%zX\r\n", data_len);
+
+   if (written < 0 || written >= (int)header_size)
+   {
+      pgexporter_log_error("Chunk header too large: %d bytes for data size %zu", written, data_len);
+      goto error;
+   }
 
    m = pgexporter_vappend(m, 2, data, "\r\n");
+
+   if (m == NULL)
+   {
+      goto error;
+   }
 
    msg.kind = 0;
    msg.length = strlen(m);
@@ -586,6 +613,7 @@ send_chunk(int client_fd, char* data)
 
 error:
 
+   free(m);
    return MESSAGE_STATUS_ERROR;
 }
 

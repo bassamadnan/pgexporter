@@ -222,7 +222,6 @@ pgexporter_extract_message(char type, struct message* msg, struct message** extr
    return 1;
 }
 
-
 bool
 pgexporter_has_message(char type, void* data, size_t data_size)
 {
