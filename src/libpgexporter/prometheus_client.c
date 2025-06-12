@@ -754,37 +754,30 @@ add_line(struct prometheus_metric* metric, char* line, int endpoint, time_t time
       else if (strlen(token) > 0)
       {
          /* Assuming of the form key="value" */
-         memset(key, 0, sizeof(key));
-         memset(value, 0, sizeof(value));
-         
-         sscanf(token, "%127[^=]", key);
-         
-         size_t key_len = strlen(key);
          size_t token_len = strlen(token);
-         
-         // Basic bounds checking: ensure we don't read past the token
-         if (key_len + 2 < token_len)  // Need at least key + '="'
-         {
-            sscanf(token + key_len + 2, "%127[^\"]", value);
-         }
-         else
-         {
-            pgexporter_log_trace("Token too short for key=\"value\" format: '%s'", token);
-            continue; // Skip this token, don't fail the whole parsing
-         }
+         size_t key_len = 0;
 
-         if (strlen(key) == 0 || strlen(value) == 0)
-         {
-            pgexporter_log_trace("Empty key or value in token: '%s', skipping", token);
-            continue; // Skip this token, don't fail the whole parsing
-         }
+         sscanf(token, "%127[^=]", key);
+         key_len = strlen(key);
 
-         if (add_attribute(line_attrs, key, value))
+         // Only apply strict validation if token looks like key="value" format
+         if (strchr(token, '=') != NULL && strchr(token, '"') != NULL)
          {
-            goto error;
+            // This looks like key="value", so validate it
+            if (token_len >= key_len + 3)  // key + '="' minimum
+            {
+               sscanf(token + key_len + 2, "%127[^\"]", value);
+
+               if (strlen(key) > 0 && strlen(value) > 0)
+               {
+                  if (add_attribute(line_attrs, key, value))
+                  {
+                     goto error;
+                  }
+               }
+            }
          }
       }
-
       token = strtok_r(NULL, "{,} ", &saveptr);
    }
 
