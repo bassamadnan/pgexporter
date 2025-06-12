@@ -222,36 +222,7 @@ pgexporter_extract_message(char type, struct message* msg, struct message** extr
    return 1;
 }
 
-// File: /src/libpgexporter/utils.c
-// Function: pgexporter_has_message()
 
-// BEFORE (your current code):
-bool
-pgexporter_has_message(char type, void* data, size_t data_size)
-{
-   size_t offset;
-
-   offset = 0;
-
-   while (offset < data_size)
-   {
-      char t = (char)pgexporter_read_byte(data + offset);
-
-      if (type == t)
-      {
-         return true;
-      }
-      else
-      {
-         offset += 1;
-         offset += pgexporter_read_int32(data + offset);  // ← BUFFER OVERFLOW HERE
-      }
-   }
-
-   return false;
-}
-
-// AFTER (with bounds checking):
 bool
 pgexporter_has_message(char type, void* data, size_t data_size)
 {
