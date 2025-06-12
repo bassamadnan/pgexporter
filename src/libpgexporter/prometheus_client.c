@@ -754,32 +754,35 @@ add_line(struct prometheus_metric* metric, char* line, int endpoint, time_t time
       else if (strlen(token) > 0)
       {
          /* Assuming of the form key="value" */
+         memset(key, 0, sizeof(key));
+         memset(value, 0, sizeof(value));
+
          sscanf(token, "%127[^=]", key);
-         
+
          size_t key_len = strlen(key);
          size_t token_len = strlen(token);
-         
-         if (key_len + 2 >= token_len)
+
+         // Basic bounds checking: ensure we don't read past the token
+         if (key_len + 2 < token_len)  // Need at least key + '="'
          {
-            // Token is too short, skip it
-            memset(key, 0, sizeof(key));
-            memset(value, 0, sizeof(value));
+            sscanf(token + key_len + 2, "%127[^\"]", value);
          }
          else
          {
-            sscanf(token + strlen(key) + 2, "%127[^\"]", value);
+            pgexporter_log_trace("Token too short for key=\"value\" format: '%s'", token);
+         }
 
-            if (strlen(key) == 0 || strlen(value) == 0)
-            {
-               goto error;
-            }
+         if (strlen(key) == 0 || strlen(value) == 0)
+         {
+            pgexporter_log_trace("Empty key or value in token: '%s', skipping", token);
+         }
 
-            if (add_attribute(line_attrs, key, value))
-            {
-               goto error;
-            }
+         if (add_attribute(line_attrs, key, value))
+         {
+            goto error;
          }
       }
+
       token = strtok_r(NULL, "{,} ", &saveptr);
    }
 
