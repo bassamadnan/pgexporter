@@ -222,6 +222,10 @@ pgexporter_extract_message(char type, struct message* msg, struct message** extr
    return 1;
 }
 
+// File: /src/libpgexporter/utils.c
+// Function: pgexporter_has_message()
+
+// BEFORE (your current code):
 bool
 pgexporter_has_message(char type, void* data, size_t data_size)
 {
@@ -240,7 +244,52 @@ pgexporter_has_message(char type, void* data, size_t data_size)
       else
       {
          offset += 1;
-         offset += pgexporter_read_int32(data + offset);
+         offset += pgexporter_read_int32(data + offset);  // ← BUFFER OVERFLOW HERE
+      }
+   }
+
+   return false;
+}
+
+// AFTER (with bounds checking):
+bool
+pgexporter_has_message(char type, void* data, size_t data_size)
+{
+   size_t offset = 0;
+
+   while (offset < data_size)
+   {
+      if (offset + 5 > data_size)
+      {
+         pgexporter_log_trace("Incomplete message header at offset %zu, need 5 bytes, have %zu remaining", offset, data_size - offset);
+         return false;
+      }
+
+      char t = (char)pgexporter_read_byte(data + offset);
+
+      if (type == t)
+      {
+         return true;
+      }
+      else
+      {
+         offset += 1;
+
+         int32_t msg_length = pgexporter_read_int32(data + offset);
+
+         if (msg_length < 4 || msg_length > 1024 * 1024)
+         {
+            pgexporter_log_error("Invalid message length %d at offset %zu", msg_length, offset);
+            return false;
+         }
+
+         if (offset + msg_length > data_size)
+         {
+            pgexporter_log_trace("Incomplete message: need %d more bytes", (int)(offset + msg_length - data_size));
+            return false;
+         }
+
+         offset += msg_length;
       }
    }
 
