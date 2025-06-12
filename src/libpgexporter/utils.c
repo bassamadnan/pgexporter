@@ -225,45 +225,23 @@ pgexporter_extract_message(char type, struct message* msg, struct message** extr
 bool
 pgexporter_has_message(char type, void* data, size_t data_size)
 {
-   size_t offset = 0;
+   size_t offset;
+
+   offset = 0;
 
    while (offset < data_size)
    {
-      // Check if we have enough bytes for message header (1 type + 4 length)
-      if (offset + 5 > data_size)
-      {
-         pgexporter_log_trace("Incomplete message header at offset %zu, need 5 bytes, have %zu remaining", 
-                              offset, data_size - offset);
-         return false; // Not enough data for complete message header
-      }
-
       char t = (char)pgexporter_read_byte(data + offset);
-      int32_t msg_length = pgexporter_read_int32(data + offset + 1);
-      
-      // Validate message length (basic sanity check)
-      if (msg_length < 4 || msg_length > 1024 * 1024) // max message size -> 1MB
-      {
-         pgexporter_log_error("Invalid message length %d at offset %zu", msg_length, offset);
-         return false;
-      }
-      
-      // Check if complete message is available
-      if (offset + 1 + msg_length > data_size)
-      {
-         pgexporter_log_trace("Incomplete message: type=%c, need %d total bytes, have %zu remaining", 
-                              t, (int)(offset + 1 + msg_length), data_size - offset);
-         return false; // Need more data for complete message
-      }
 
       if (type == t)
       {
-         pgexporter_log_trace("Found message type %c at offset %zu", type, offset);
          return true;
       }
-      
-      // Skip to next message
-      offset += 1; // Skip type byte
-      offset += msg_length; // Skip length field + data (length includes itself)
+      else
+      {
+         offset += 1;
+         offset += pgexporter_read_int32(data + offset);
+      }
    }
 
    return false;
