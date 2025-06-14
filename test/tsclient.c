@@ -592,6 +592,7 @@ error:
     if (http != NULL)
     {
         pgexporter_http_disconnect(http);
+        pgexporter_http_destroy(http);
     }
     free(response_body);
     return ret;
@@ -750,6 +751,7 @@ error:
    if (http != NULL)
    {
        pgexporter_http_disconnect(http);
+       pgexporter_http_destroy(http);
    }
    free(response_body);
    
