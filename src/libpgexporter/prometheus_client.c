@@ -746,7 +746,7 @@ add_line(struct prometheus_metric* metric, char* line, int endpoint, time_t time
             goto error;
          }
       }
-      else if (saveptr != NULL &&  *saveptr == '\0')
+      else if (saveptr == NULL || (saveptr != NULL && *saveptr == '\0'))
       {
          /* Final token. */
          line_value = strdup(token);
@@ -754,12 +754,12 @@ add_line(struct prometheus_metric* metric, char* line, int endpoint, time_t time
       else if (strlen(token) > 0)
       {
          /* Assuming of the form key="value" */
-         printf("About to find token\n");
-         fflush(stdout);
+         // printf("About to find token\n");
+         // fflush(stdout);
          sscanf(token, "%127[^=]", key);
          sscanf(token + strlen(key) + 2, "%127[^\"]", value);
-         printf("Found token %s\n", token);
-         fflush(stdout);
+         // printf("Found token %s\n", token);
+         // fflush(stdout);
          if (strlen(key) == 0 || strlen(value) == 0)
          {
             goto error;
