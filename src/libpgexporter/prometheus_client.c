@@ -467,28 +467,59 @@ attributes_find_create(struct deque* definitions, struct deque* input,
 
    /* Ok, create a new one */
    if (!found)
+{
+   m = (struct prometheus_attributes*)malloc(sizeof (struct prometheus_attributes));
+   if (m == NULL)
    {
-      m = (struct prometheus_attributes*)malloc(sizeof (struct prometheus_attributes));
-      if (m == NULL)
-      {
-         goto error;
-      }
-
-      if (pgexporter_deque_create(false, &m->values))
-      {
-         goto error;
-      }
-
-      m->attributes = input;
-
-      if (pgexporter_deque_add_with_config(definitions, NULL, (uintptr_t)m, &vc))
-      {
-         goto error;
-      }
-
-      *attributes = m;
-      *new = true;
+      goto error;
    }
+
+   if (pgexporter_deque_create(false, &m->values))
+   {
+      goto error;
+   }
+
+   //Create a new deque and copy the data instead of direct assignment
+   if (pgexporter_deque_create(false, &m->attributes))
+   {
+      goto error;
+   }
+
+   // Copy all elements from input to m->attributes
+   if (!pgexporter_deque_empty(input))
+   {
+      struct deque_iterator* input_iterator = NULL;
+      if (pgexporter_deque_iterator_create(input, &input_iterator) == 0)
+      {
+         while (pgexporter_deque_iterator_next(input_iterator))
+         {
+            struct prometheus_attribute* original_attr = (struct prometheus_attribute*)input_iterator->value->data;
+            
+            // Create a copy of the attribute
+            struct prometheus_attribute* attr_copy = malloc(sizeof(struct prometheus_attribute));
+            if (attr_copy != NULL)
+            {
+               memset(attr_copy, 0, sizeof(struct prometheus_attribute));
+               attr_copy->key = strdup(original_attr->key);
+               attr_copy->value = strdup(original_attr->value);
+               
+               struct value_config attr_vc = {.destroy_data = &prometheus_attribute_destroy_cb,
+                                              .to_string = &prometheus_attribute_string_cb};
+               pgexporter_deque_add_with_config(m->attributes, NULL, (uintptr_t)attr_copy, &attr_vc);
+            }
+         }
+         pgexporter_deque_iterator_destroy(input_iterator);
+         }
+         }
+
+         if (pgexporter_deque_add_with_config(definitions, NULL, (uintptr_t)m, &vc))
+         {
+            goto error;
+         }
+
+         *attributes = m;
+         *new = true;
+      }
 
    pgexporter_deque_iterator_destroy(definition_iterator);
 
@@ -786,10 +817,8 @@ add_line(struct prometheus_metric* metric, char* line, int endpoint, time_t time
       goto error;
    }
 
-   if (!new)
-   {
-      pgexporter_deque_destroy(line_attrs);
-   }
+   pgexporter_deque_destroy(line_attrs);
+
 
    free(e);
    free(line_cpy);
