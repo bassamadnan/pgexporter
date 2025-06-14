@@ -120,14 +120,14 @@ http_extract_headers_body(char* response, struct http* http)
    if (response == NULL)
    {
       pgexporter_log_error("Response is NULL");
-      goto error;
+      return 1;
    }
 
    response_copy = strdup(response);
    if (response_copy == NULL)
    {
       pgexporter_log_error("Failed to duplicate response string");
-      goto error;
+      return 1;
    }
 
    p = strtok(response_copy, "\n");
@@ -159,33 +159,25 @@ http_extract_headers_body(char* response, struct http* http)
 
    free(response_copy);
    return 0;
-
-error:
-   free(response_copy);
-   return 1;
 }
 
 int
 pgexporter_http_get(struct http* http, char* hostname, char* path)
 {
-   struct message msg_request;
-   struct message* msg_response = NULL;
+   struct message* msg_request = NULL;
    int error = 0;
    int status;
    char* request = NULL;
    char* full_request = NULL;
    char* response = NULL;
    char* user_agent = NULL;
-   char* endpoint = (path != NULL) ? path : "/metrics";
-
-   memset(&msg_request, 0, sizeof(struct message));
+   char* endpoint = path ? path : "/get";
 
    pgexporter_log_trace("Starting pgexporter_http_get");
-   if (http_build_header(PGEXPORTER_HTTP_GET, endpoint, &request))
-   {
-      pgexporter_log_error("Failed to build HTTP header");
-      goto error;
-   }
+   
+   request = pgexporter_append(request, "GET ");
+   request = pgexporter_append(request, endpoint);
+   request = pgexporter_append(request, " HTTP/1.1\r\n");
 
    pgexporter_http_add_header(http, "Host", hostname);
    user_agent = pgexporter_append(user_agent, "pgexporter/");
@@ -198,14 +190,22 @@ pgexporter_http_get(struct http* http, char* hostname, char* path)
    full_request = pgexporter_append(full_request, http->request_headers);
    full_request = pgexporter_append(full_request, "\r\n");
 
-   msg_request.data = full_request;
-   msg_request.length = strlen(full_request) + 1;
+   msg_request = (struct message*)malloc(sizeof(struct message));
+   if (msg_request == NULL)
+   {
+      pgexporter_log_error("Failed to allocate msg_request");
+      goto error;
+   }
+
+   memset(msg_request, 0, sizeof(struct message));
+   msg_request->data = full_request;
+   msg_request->length = strlen(full_request) + 1;
 
    error = 0;
 req:
    if (error < 5)
    {
-      status = pgexporter_write_message(http->ssl, http->socket, &msg_request);
+      status = pgexporter_write_message(http->ssl, http->socket, msg_request);
       if (status != MESSAGE_STATUS_OK)
       {
          error++;
@@ -219,31 +219,12 @@ req:
       goto error;
    }
 
-res:
-   // Get a pointer to the global message structure
-   status = pgexporter_read_block_message(http->ssl, http->socket, &msg_response);
-   if (status != MESSAGE_STATUS_ZERO)
-   {
-      if (status == MESSAGE_STATUS_OK)
-      {
-         // Get data from the response message
-         if (msg_response != NULL && msg_response->data != NULL)
-         {
-            response = pgexporter_append(response, (char*)msg_response->data);
-         }
-         pgexporter_clear_message();
-         goto res;
-      }
-      else
-      {
-         pgexporter_log_error("Error reading response");
-         goto error;
-      }
-   }
+   status = pgexporter_http_read(http->ssl, http->socket, &response);
 
-   if (msg_response != NULL && msg_response->length > 0 && msg_response->data != NULL)
+   if (response == NULL)
    {
-      response = pgexporter_append(response, (char*)msg_response->data);
+      pgexporter_log_error("No response data collected");
+      goto error;
    }
 
    if (http_extract_headers_body(response, http))
@@ -252,12 +233,13 @@ res:
       goto error;
    }
 
-   pgexporter_log_debug("HTTP Headers: %s", http->headers != NULL ? http->headers : "NULL");
-   pgexporter_log_debug("HTTP Body: %s", http->body != NULL ? http->body : "NULL");
+   pgexporter_log_debug("HTTP Headers: %s", http->headers ? http->headers : "NULL");
+   pgexporter_log_debug("HTTP Body: %s", http->body ? http->body : "NULL");
 
    free(request);
    free(full_request);
    free(response);
+   free(msg_request);
    free(user_agent);
 
    free(http->request_headers);
@@ -269,6 +251,7 @@ error:
    free(request);
    free(full_request);
    free(response);
+   free(msg_request);
    free(user_agent);
    free(http->request_headers);
    http->request_headers = NULL;
