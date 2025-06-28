@@ -19,7 +19,7 @@ metrics:
       columns:
         - description: Is the PostgreSQL instance the primary
           type: gauge
-    tag: postgresql_primary
+    tag: postgresql_primary_super_unique_name
     sort: name
     collector: primary
     server: both
