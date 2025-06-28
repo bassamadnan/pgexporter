@@ -40,6 +40,7 @@ PGPASSWORD="password"
 
 PROJECT_DIRECTORY=$(pwd)
 EXECUTABLE_DIRECTORY=$(pwd)/src
+CUSTOM_METRICS=$(pwd)/../contrib/yaml/postgresql-14.yaml
 TEST_DIRECTORY=$(pwd)/test
 
 LOG_DIRECTORY=$(pwd)/log
@@ -589,7 +590,7 @@ execute_testcases() {
       exit 1
    fi
    
-   run_as_postgres "$EXECUTABLE_DIRECTORY/pgexporter -c $CONFIGURATION_DIRECTORY/pgexporter.conf -u $CONFIGURATION_DIRECTORY/pgexporter_users.conf -d"
+   run_as_postgres "$EXECUTABLE_DIRECTORY/pgexporter -c $CONFIGURATION_DIRECTORY/pgexporter.conf -u $CONFIGURATION_DIRECTORY/pgexporter_users.conf -Y $CUSTOM_METRICS -d"
    
    # Wait a moment for pgexporter to start
    sleep 3
