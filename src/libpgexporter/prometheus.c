@@ -1714,12 +1714,12 @@ extension_metrics(SSL* client_ssl, int client_fd)
    ext_q_list = NULL;
 }
 
+
 static void
 custom_metrics(SSL* client_ssl, int client_fd)
 {
    struct configuration* config = NULL;
    char* data = NULL;
-   int ret = 0;
 
    config = (struct configuration*)shmem;
 
@@ -1740,96 +1740,71 @@ custom_metrics(SSL* client_ssl, int client_fd)
       // Iterate through each server and send appropriate query to PostgreSQL server
       for (int server = 0; server < config->number_of_servers; server++)
       {
-         // Database execution
-         int n_db = config->servers[server].number_of_databases;
-         if (prom->exec_on_all_dbs)
+         if (config->servers[server].fd == -1)
          {
-            pgexporter_log_debug("Querying on all databases for tag %s: ENABLED", prom->tag);
+            /* Skip */
+            continue;
+         }
+
+         if ((prom->server_query_type == SERVER_QUERY_PRIMARY && config->servers[server].state != SERVER_PRIMARY) ||
+             (prom->server_query_type == SERVER_QUERY_REPLICA && config->servers[server].state != SERVER_REPLICA))
+         {
+            /* Skip */
+            continue;
+         }
+
+         struct pg_query_alts* query_alt = pgexporter_get_pg_query_alt(prom->pg_root, server);
+
+         if (!query_alt)
+         {
+            /* Skip */
+            continue;
+         }
+
+         // Setting Temp's value
+         query_list_t* next = malloc(sizeof(query_list_t));
+         memset(next, 0, sizeof(query_list_t));
+
+         if (!q_list)
+         {
+            q_list = next;
+            temp = q_list;
+         }
+         else if (temp && temp->query)
+         {
+            temp->next = next;
+            temp = next;
+         }
+         else if (temp && !temp->query)
+         {
+            free(next);
+            next = NULL;
+            memset(temp, 0, sizeof(query_list_t));
+         }
+
+         /* Names */
+         char** names = malloc(query_alt->node.n_columns * sizeof(char*));
+         for (int j = 0; j < query_alt->node.n_columns; j++)
+         {
+            names[j] = query_alt->node.columns[j].name;
+         }
+         memcpy(temp->tag, prom->tag, MISC_LENGTH);
+         temp->query_alt = query_alt;
+
+         // Gather all the queries in a linked list, with each query's result (linked list of tuples in it) as a node.
+         if (query_alt->node.is_histogram)
+         {
+            temp->error = pgexporter_custom_query(server, query_alt->node.query, prom->tag, -1, NULL, &temp->query);
+            temp->sort_type = prom->sort_type;
          }
          else
          {
-            pgexporter_log_debug("Querying on all databases for tag %s: DISABLED", prom->tag);
+            temp->error = pgexporter_custom_query(server, query_alt->node.query, prom->tag, query_alt->node.n_columns, names, &temp->query);
+            temp->sort_type = prom->sort_type;
          }
 
-         for (int db_idx = prom->exec_on_all_dbs ? 0 : n_db - 1; db_idx < n_db; db_idx++)
-         {
-            if (config->servers[server].fd == -1)
-            {
-               /* Skip */
-               continue;
-            }
-
-            if ((prom->server_query_type == SERVER_QUERY_PRIMARY && config->servers[server].state != SERVER_PRIMARY) ||
-                (prom->server_query_type == SERVER_QUERY_REPLICA && config->servers[server].state != SERVER_REPLICA))
-            {
-               /* Skip */
-               continue;
-            }
-
-            struct pg_query_alts* query_alt = pgexporter_get_pg_query_alt(prom->pg_root, server);
-
-            if (!query_alt)
-            {
-               /* Skip */
-               continue;
-            }
-
-            // Setting Temp's value
-            query_list_t* next = malloc(sizeof(query_list_t));
-            memset(next, 0, sizeof(query_list_t));
-
-            if (!q_list)
-            {
-               q_list = next;
-               temp = q_list;
-            }
-            else if (temp && temp->query)
-            {
-               temp->next = next;
-               temp = next;
-            }
-            else if (temp && !temp->query)
-            {
-               free(next);
-               next = NULL;
-               memset(temp, 0, sizeof(query_list_t));
-            }
-
-            /* Names */
-            char** names = malloc(query_alt->node.n_columns * sizeof(char*));
-            for (int j = 0; j < query_alt->node.n_columns; j++)
-            {
-               names[j] = query_alt->node.columns[j].name;
-            }
-            memcpy(temp->tag, prom->tag, MISC_LENGTH);
-            temp->query_alt = query_alt;
-            pgexporter_log_debug("Querying db: %d / %d", db_idx + 1, n_db);
-
-            char* database = config->servers[server].databases[db_idx];
-            ret = pgexporter_switch_db(server, database);
-            if (ret != 0)
-            {
-               pgexporter_log_warn("Error connecting to server: %d, database: %d", database, server);
-               break;
-            }
-
-            // Gather all the queries in a linked list, with each query's result (linked list of tuples in it) as a node.
-            if (query_alt->node.is_histogram)
-            {
-               temp->error = pgexporter_custom_query(server, query_alt->node.query, prom->tag, -1, NULL, &temp->query);
-               temp->sort_type = prom->sort_type;
-            }
-            else
-            {
-               temp->error = pgexporter_custom_query(server, query_alt->node.query, prom->tag, query_alt->node.n_columns, names, &temp->query);
-               temp->sort_type = prom->sort_type;
-            }
-
-            strncpy(temp->database, database, DB_NAME_LENGTH - 1);
-
-            free(names);
-            names = NULL;
-         }
+         free(names);
+         names = NULL;
       }
    }
 
