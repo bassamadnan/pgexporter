@@ -87,8 +87,11 @@ static void copy_server(struct server* dst, struct server* src);
 static void copy_user(struct user* dst, struct user* src);
 static void copy_promethus(struct prometheus* dst, struct prometheus* src);
 static void copy_endpoint(struct endpoint* dst, struct endpoint* src);
+static int restart_bool(char* name, bool e, bool n);
 static int restart_int(char* name, int e, int n);
 static int restart_string(char* name, char* e, char* n);
+static bool is_same_tls(struct server* src, struct server* dst);
+static bool is_same_global_tls(struct configuration* src, struct configuration* dst);
 
 static bool is_empty_string(char* s);
 
@@ -3662,6 +3665,12 @@ transfer_configuration(struct configuration* config, struct configuration* reloa
    config->cache = reload->cache;
    config->alerts_enabled = reload->alerts_enabled;
 
+   if (restart_bool("tls", config->tls, reload->tls))
+   {
+      changed = true;
+   }
+   config->tls = reload->tls;
+
    /* log_type */
    if (restart_int("log_type", config->log_type, reload->log_type))
    {
@@ -3684,6 +3693,12 @@ transfer_configuration(struct configuration* config, struct configuration* reloa
    /* log_lock */
 
    config->tls = reload->tls;
+
+   if (!is_same_global_tls(config, reload))
+   {
+      pgexporter_log_info("Restart required for global TLS configuration");
+      changed = true;
+   }
    memcpy(config->tls_cert_file, reload->tls_cert_file, MAX_PATH);
    memcpy(config->tls_key_file, reload->tls_key_file, MAX_PATH);
    memcpy(config->tls_ca_file, reload->tls_ca_file, MAX_PATH);
@@ -3729,11 +3744,32 @@ transfer_configuration(struct configuration* config, struct configuration* reloa
    memcpy(config->excluded_collectors, reload->excluded_collectors, sizeof(config->excluded_collectors));
    config->number_of_excluded_collectors = reload->number_of_excluded_collectors;
 
+   memcpy(config->excluded_collectors, reload->excluded_collectors, sizeof(config->excluded_collectors));
+   config->number_of_excluded_collectors = reload->number_of_excluded_collectors;
+
+   /* Evaluate TLS changes before clearing the existing configuration array */
+   for (int i = 0; i < reload->number_of_servers; i++)
+   {
+      for (int j = 0; j < config->number_of_servers; j++)
+      {
+         if (!strcmp(config->servers[j].name, reload->servers[i].name))
+         {
+            if (!is_same_tls(&config->servers[j], &reload->servers[i]))
+            {
+               pgexporter_log_info("Restart required for Server <%s>: TLS configuration changed", reload->servers[i].name);
+               changed = true;
+            }
+            break;
+         }
+      }
+   }
+
    memset(&config->servers[0], 0, sizeof(struct server) * NUMBER_OF_SERVERS);
    for (int i = 0; i < reload->number_of_servers; i++)
    {
       copy_server(&config->servers[i], &reload->servers[i]);
    }
+
    config->number_of_servers = reload->number_of_servers;
 
    memset(&config->users[0], 0, sizeof(struct user) * NUMBER_OF_USERS);
@@ -3792,6 +3828,11 @@ copy_server(struct server* dst, struct server* src)
    memcpy(&dst->username[0], &src->username[0], MAX_USERNAME_LENGTH);
    memcpy(&dst->data[0], &src->data[0], MISC_LENGTH);
    memcpy(&dst->wal[0], &src->wal[0], MISC_LENGTH);
+
+   memcpy(&dst->tls_cert_file[0], &src->tls_cert_file[0], MAX_PATH);
+   memcpy(&dst->tls_key_file[0], &src->tls_key_file[0], MAX_PATH);
+   memcpy(&dst->tls_ca_file[0], &src->tls_ca_file[0], MAX_PATH);
+
    memcpy(&dst->extensions_config[0], &src->extensions_config[0], MAX_EXTENSIONS_CONFIG_LENGTH);
    dst->fd = src->fd;
 }
@@ -3840,6 +3881,48 @@ restart_string(char* name, char* e, char* n)
    if (strcmp(e, n))
    {
       pgexporter_log_info("Restart required for %s - Existing %s New %s", name, e, n);
+      return 1;
+   }
+
+   return 0;
+}
+
+static bool
+is_same_tls(struct server* src, struct server* dst)
+{
+   if (strcmp(src->tls_cert_file, dst->tls_cert_file))
+      return false;
+   if (strcmp(src->tls_key_file, dst->tls_key_file))
+      return false;
+   if (strcmp(src->tls_ca_file, dst->tls_ca_file))
+      return false;
+   return true;
+}
+
+static bool
+is_same_global_tls(struct configuration* src, struct configuration* dst)
+{
+   if (strcmp(src->tls_cert_file, dst->tls_cert_file))
+      return false;
+   if (strcmp(src->tls_key_file, dst->tls_key_file))
+      return false;
+   if (strcmp(src->tls_ca_file, dst->tls_ca_file))
+      return false;
+   if (strcmp(src->metrics_cert_file, dst->metrics_cert_file))
+      return false;
+   if (strcmp(src->metrics_key_file, dst->metrics_key_file))
+      return false;
+   if (strcmp(src->metrics_ca_file, dst->metrics_ca_file))
+      return false;
+   return true;
+}
+
+static int
+restart_bool(char* name, bool e, bool n)
+{
+   if (e != n)
+   {
+      pgexporter_log_info("Restart required for %s - Existing %s New %s", name, e ? "true" : "false", n ? "true" : "false");
       return 1;
    }
 
