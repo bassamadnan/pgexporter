@@ -31,6 +31,7 @@
 #include <aes.h>
 #include <bridge.h>
 #include <configuration.h>
+#include <json.h>
 #include <ext_query_alts.h>
 #include <logging.h>
 #include <management.h>
@@ -97,6 +98,12 @@ static bool is_empty_string(char* s);
 
 static void add_configuration_response(struct json* res);
 static void add_servers_configuration_response(struct json* res);
+
+static int to_log_type(char* where, int value);
+static int to_log_level(char* where, int value);
+static int to_log_mode(char* where, int value);
+static int to_hugepage(char* where, int value);
+static int to_update_process_title(char* where, int value);
 static bool pgexporter_is_binary_file(const char* path);
 
 /**
@@ -2608,9 +2615,9 @@ add_configuration_response(struct json* res)
    pgexporter_json_put(res, CONFIGURATION_ARGUMENT_UNIX_SOCKET_DIR, (uintptr_t)config->unix_socket_dir, ValueString);
    pgexporter_json_put(res, CONFIGURATION_ARGUMENT_METRICS, (uintptr_t)config->metrics, ValueInt64);
    pgexporter_json_put(res, CONFIGURATION_ARGUMENT_METRICS_PATH, (uintptr_t)config->metrics_path, ValueString);
-   pgexporter_json_put(res, CONFIGURATION_ARGUMENT_METRICS_CACHE_MAX_AGE, (uintptr_t)pgexporter_time_convert(config->metrics_cache_max_age, FORMAT_TIME_S), ValueInt64);
-   pgexporter_json_put(res, CONFIGURATION_ARGUMENT_METRICS_CACHE_MAX_SIZE, (uintptr_t)config->metrics_cache_max_size, ValueInt64);
-   pgexporter_json_put(res, CONFIGURATION_ARGUMENT_METRICS_QUERY_TIMEOUT, (uintptr_t)pgexporter_time_convert(config->metrics_query_timeout, FORMAT_TIME_MS), ValueInt64);
+   pgexporter_json_put_time_value(res, CONFIGURATION_ARGUMENT_METRICS_CACHE_MAX_AGE, config->metrics_cache_max_age, FORMAT_TIME_S);
+   pgexporter_json_put_size_value(res, CONFIGURATION_ARGUMENT_METRICS_CACHE_MAX_SIZE, config->metrics_cache_max_size);
+   pgexporter_json_put_time_value(res, CONFIGURATION_ARGUMENT_METRICS_QUERY_TIMEOUT, config->metrics_query_timeout, FORMAT_TIME_MS);
    pgexporter_json_put(res, CONFIGURATION_ARGUMENT_BRIDGE, (uintptr_t)config->bridge, ValueInt64);
 
    if (config->number_of_endpoints > 0)
@@ -2633,21 +2640,21 @@ add_configuration_response(struct json* res)
    }
 
    pgexporter_json_put(res, CONFIGURATION_ARGUMENT_BRIDGE_ENDPOINTS, (uintptr_t)data, ValueString);
-   pgexporter_json_put(res, CONFIGURATION_ARGUMENT_BRIDGE_CACHE_MAX_AGE, (uintptr_t)pgexporter_time_convert(config->bridge_cache_max_age, FORMAT_TIME_S), ValueInt64);
-   pgexporter_json_put(res, CONFIGURATION_ARGUMENT_BRIDGE_CACHE_MAX_SIZE, (uintptr_t)config->bridge_cache_max_size, ValueInt64);
+   pgexporter_json_put_time_value(res, CONFIGURATION_ARGUMENT_BRIDGE_CACHE_MAX_AGE, config->bridge_cache_max_age, FORMAT_TIME_S);
+   pgexporter_json_put_size_value(res, CONFIGURATION_ARGUMENT_BRIDGE_CACHE_MAX_SIZE, config->bridge_cache_max_size);
    pgexporter_json_put(res, CONFIGURATION_ARGUMENT_BRIDGE_JSON, (uintptr_t)config->bridge_json, ValueInt64);
-   pgexporter_json_put(res, CONFIGURATION_ARGUMENT_BRIDGE_JSON_CACHE_MAX_SIZE, (uintptr_t)config->bridge_json_cache_max_size, ValueInt64);
+   pgexporter_json_put_size_value(res, CONFIGURATION_ARGUMENT_BRIDGE_JSON_CACHE_MAX_SIZE, config->bridge_json_cache_max_size);
    pgexporter_json_put(res, CONFIGURATION_ARGUMENT_MANAGEMENT, (uintptr_t)config->management, ValueInt64);
    pgexporter_json_put(res, CONFIGURATION_ARGUMENT_ALERTS, (uintptr_t)config->alerts_enabled, ValueBool);
    pgexporter_json_put(res, CONFIGURATION_ARGUMENT_CACHE, (uintptr_t)config->cache, ValueBool);
-   pgexporter_json_put(res, CONFIGURATION_ARGUMENT_LOG_TYPE, (uintptr_t)config->log_type, ValueInt32);
-   pgexporter_json_put(res, CONFIGURATION_ARGUMENT_LOG_LEVEL, (uintptr_t)config->log_level, ValueInt32);
+   pgexporter_json_put_enum_value(res, CONFIGURATION_ARGUMENT_LOG_TYPE, config->log_type, to_log_type);
+   pgexporter_json_put_enum_value(res, CONFIGURATION_ARGUMENT_LOG_LEVEL, config->log_level, to_log_level);
    pgexporter_json_put(res, CONFIGURATION_ARGUMENT_LOG_PATH, (uintptr_t)config->log_path, ValueString);
-   pgexporter_json_put(res, CONFIGURATION_ARGUMENT_LOG_ROTATION_AGE, (uintptr_t)pgexporter_time_convert(config->log_rotation_age, FORMAT_TIME_S), ValueInt64);
-   pgexporter_json_put(res, CONFIGURATION_ARGUMENT_LOG_ROTATION_SIZE, (uintptr_t)config->log_rotation_size, ValueInt64);
+   pgexporter_json_put_time_value(res, CONFIGURATION_ARGUMENT_LOG_ROTATION_AGE, config->log_rotation_age, FORMAT_TIME_S);
+   pgexporter_json_put_size_value(res, CONFIGURATION_ARGUMENT_LOG_ROTATION_SIZE, config->log_rotation_size);
    pgexporter_json_put(res, CONFIGURATION_ARGUMENT_LOG_LINE_PREFIX, (uintptr_t)config->log_line_prefix, ValueString);
-   pgexporter_json_put(res, CONFIGURATION_ARGUMENT_LOG_MODE, (uintptr_t)config->log_mode, ValueInt32);
-   pgexporter_json_put(res, CONFIGURATION_ARGUMENT_BLOCKING_TIMEOUT, (uintptr_t)pgexporter_time_convert(config->blocking_timeout, FORMAT_TIME_S), ValueInt64);
+   pgexporter_json_put_enum_value(res, CONFIGURATION_ARGUMENT_LOG_MODE, config->log_mode, to_log_mode);
+   pgexporter_json_put_time_value(res, CONFIGURATION_ARGUMENT_BLOCKING_TIMEOUT, config->blocking_timeout, FORMAT_TIME_S);
    pgexporter_json_put(res, CONFIGURATION_ARGUMENT_TLS, (uintptr_t)config->tls, ValueBool);
    pgexporter_json_put(res, CONFIGURATION_ARGUMENT_TLS_CERT_FILE, (uintptr_t)config->tls_cert_file, ValueString);
    pgexporter_json_put(res, CONFIGURATION_ARGUMENT_TLS_CA_FILE, (uintptr_t)config->tls_ca_file, ValueString);
@@ -2660,9 +2667,9 @@ add_configuration_response(struct json* res)
    pgexporter_json_put(res, CONFIGURATION_ARGUMENT_NODELAY, (uintptr_t)config->nodelay, ValueBool);
    pgexporter_json_put(res, CONFIGURATION_ARGUMENT_NON_BLOCKING, (uintptr_t)config->non_blocking, ValueBool);
    pgexporter_json_put(res, CONFIGURATION_ARGUMENT_BACKLOG, (uintptr_t)config->backlog, ValueInt64);
-   pgexporter_json_put(res, CONFIGURATION_ARGUMENT_HUGEPAGE, (uintptr_t)config->hugepage, ValueChar);
+   pgexporter_json_put_enum_value(res, CONFIGURATION_ARGUMENT_HUGEPAGE, config->hugepage, to_hugepage);
    pgexporter_json_put(res, CONFIGURATION_ARGUMENT_PIDFILE, (uintptr_t)config->pidfile, ValueString);
-   pgexporter_json_put(res, CONFIGURATION_ARGUMENT_UPDATE_PROCESS_TITLE, (uintptr_t)config->update_process_title, ValueUInt64);
+   pgexporter_json_put_enum_value(res, CONFIGURATION_ARGUMENT_UPDATE_PROCESS_TITLE, config->update_process_title, to_update_process_title);
    pgexporter_json_put(res, CONFIGURATION_ARGUMENT_MAIN_CONF_PATH, (uintptr_t)config->configuration_path, ValueString);
    pgexporter_json_put(res, CONFIGURATION_ARGUMENT_USER_CONF_PATH, (uintptr_t)config->users_path, ValueString);
    pgexporter_json_put(res, CONFIGURATION_ARGUMENT_ADMIN_CONF_PATH, (uintptr_t)config->admins_path, ValueString);
@@ -3990,4 +3997,131 @@ pgexporter_is_binary_file(const char* path)
 
 error:
    return true;
+}
+
+static int
+to_log_type(char* where, int value)
+{
+   if (!where)
+   {
+      return 1;
+   }
+   switch (value)
+   {
+      case PGEXPORTER_LOGGING_TYPE_FILE:
+         snprintf(where, MISC_LENGTH, "%s", "file");
+         break;
+      case PGEXPORTER_LOGGING_TYPE_CONSOLE:
+         snprintf(where, MISC_LENGTH, "%s", "console");
+         break;
+      case PGEXPORTER_LOGGING_TYPE_SYSLOG:
+         snprintf(where, MISC_LENGTH, "%s", "syslog");
+         break;
+      default:
+         return 1;
+   }
+   return 0;
+}
+
+static int
+to_log_level(char* where, int value)
+{
+   if (!where)
+   {
+      return 1;
+   }
+   switch (value)
+   {
+      case PGEXPORTER_LOGGING_LEVEL_DEBUG1:
+      case PGEXPORTER_LOGGING_LEVEL_DEBUG2:
+         snprintf(where, MISC_LENGTH, "%s", "debug");
+         break;
+      case PGEXPORTER_LOGGING_LEVEL_INFO:
+         snprintf(where, MISC_LENGTH, "%s", "info");
+         break;
+      case PGEXPORTER_LOGGING_LEVEL_WARN:
+         snprintf(where, MISC_LENGTH, "%s", "warn");
+         break;
+      case PGEXPORTER_LOGGING_LEVEL_ERROR:
+         snprintf(where, MISC_LENGTH, "%s", "error");
+         break;
+      case PGEXPORTER_LOGGING_LEVEL_FATAL:
+         snprintf(where, MISC_LENGTH, "%s", "fatal");
+         break;
+      default:
+         return 1;
+   }
+   return 0;
+}
+
+static int
+to_log_mode(char* where, int value)
+{
+   if (!where)
+   {
+      return 1;
+   }
+   switch (value)
+   {
+      case PGEXPORTER_LOGGING_MODE_CREATE:
+         snprintf(where, MISC_LENGTH, "%s", "create");
+         break;
+      case PGEXPORTER_LOGGING_MODE_APPEND:
+         snprintf(where, MISC_LENGTH, "%s", "append");
+         break;
+      default:
+         return 1;
+   }
+   return 0;
+}
+
+static int
+to_hugepage(char* where, int value)
+{
+   if (!where)
+   {
+      return 1;
+   }
+   switch (value)
+   {
+      case HUGEPAGE_OFF:
+         snprintf(where, MISC_LENGTH, "%s", "off");
+         break;
+      case HUGEPAGE_TRY:
+         snprintf(where, MISC_LENGTH, "%s", "try");
+         break;
+      case HUGEPAGE_ON:
+         snprintf(where, MISC_LENGTH, "%s", "on");
+         break;
+      default:
+         return 1;
+   }
+   return 0;
+}
+
+static int
+to_update_process_title(char* where, int value)
+{
+   if (!where)
+   {
+      return 1;
+   }
+   switch (value)
+   {
+      case UPDATE_PROCESS_TITLE_NEVER:
+         snprintf(where, MISC_LENGTH, "%s", "never");
+         break;
+      case UPDATE_PROCESS_TITLE_STRICT:
+         snprintf(where, MISC_LENGTH, "%s", "strict");
+         break;
+      case UPDATE_PROCESS_TITLE_MINIMAL:
+         snprintf(where, MISC_LENGTH, "%s", "minimal");
+         break;
+      case UPDATE_PROCESS_TITLE_VERBOSE:
+         snprintf(where, MISC_LENGTH, "%s", "verbose");
+         break;
+      default:
+         return 1;
+   }
+   return 0;
 }

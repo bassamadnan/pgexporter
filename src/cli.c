@@ -1422,15 +1422,37 @@ get_config_key_result(char* config_key, struct json* j, uintptr_t* r, int32_t ou
       else if (!strcmp(key, iter->key))
       {
          // Handle single or two-part keys
-         config_value = pgexporter_value_to_string(iter->value, FORMAT_TEXT, NULL, 0);
          if (iter->value->type == ValueJSON)
          {
-            struct json* server_data = NULL;
-            pgexporter_json_clone((struct json*)iter->value->data, &server_data);
-            pgexporter_json_put(filtered_response, key, (uintptr_t)server_data, iter->value->type);
+            struct json* nested_obj = (struct json*)iter->value->data;
+            if (pgexporter_json_contains_key(nested_obj, "string_value"))
+            {
+               /* Enriched JSON: { "value": N, "string_value": "..." } */
+               if (output_format == MANAGEMENT_OUTPUT_FORMAT_TEXT)
+               {
+                  config_value = strdup((char*)pgexporter_json_get(nested_obj, "string_value"));
+                  pgexporter_json_put(filtered_response, key,
+                                      (uintptr_t)pgexporter_json_get(nested_obj, "string_value"), ValueString);
+               }
+               else
+               {
+                  config_value = pgexporter_value_to_string(iter->value, FORMAT_TEXT, NULL, 0);
+                  struct json* cloned = NULL;
+                  pgexporter_json_clone(nested_obj, &cloned);
+                  pgexporter_json_put(filtered_response, key, (uintptr_t)cloned, ValueJSON);
+               }
+            }
+            else
+            {
+               config_value = pgexporter_value_to_string(iter->value, FORMAT_TEXT, NULL, 0);
+               struct json* server_data = NULL;
+               pgexporter_json_clone(nested_obj, &server_data);
+               pgexporter_json_put(filtered_response, key, (uintptr_t)server_data, iter->value->type);
+            }
          }
          else
          {
+            config_value = pgexporter_value_to_string(iter->value, FORMAT_TEXT, NULL, 0);
             pgexporter_json_put(filtered_response, key, (uintptr_t)iter->value->data, iter->value->type);
          }
          break;

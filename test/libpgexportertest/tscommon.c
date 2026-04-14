@@ -181,6 +181,15 @@ json_get_int64_safe(struct json* j, char* key, int64_t* out)
       case ValueUInt64:
          *out = (int64_t)data;
          return 0;
+      case ValueJSON:
+      {
+         struct json* nested = (struct json*)data;
+         if (pgexporter_json_contains_key(nested, "value"))
+         {
+            return json_get_int64_safe(nested, "value", out);
+         }
+         return -1;
+      }
       default:
          return -1;
    }

@@ -29,6 +29,7 @@
 
 #include <pgexporter.h>
 #include <configuration.h>
+#include <json.h>
 #include <shmem.h>
 #include <tscommon.h>
 #include <utils.h>
@@ -212,5 +213,109 @@ MCTF_TEST(test_configuration_get_returns_set_values)
 
 cleanup:
    pgexporter_test_teardown();
+   MCTF_FINISH();
+}
+
+static int
+test_enum_to_str(char* where, int value)
+{
+   if (!where)
+   {
+      return 1;
+   }
+
+   switch (value)
+   {
+      case 0:
+         snprintf(where, MISC_LENGTH, "%s", "off");
+         break;
+      case 1:
+         snprintf(where, MISC_LENGTH, "%s", "foreground");
+         break;
+      case 2:
+         snprintf(where, MISC_LENGTH, "%s", "background");
+         break;
+      default:
+         return 1;
+   }
+
+   return 0;
+}
+
+MCTF_TEST(test_configuration_json_put_enum_value)
+{
+   struct json* res = NULL;
+   struct json* nested = NULL;
+
+   pgexporter_json_create(&res);
+
+   pgexporter_json_put_enum_value(res, "validation", 1, test_enum_to_str);
+
+   nested = (struct json*)pgexporter_json_get(res, "validation");
+   MCTF_ASSERT_PTR_NONNULL(nested, cleanup, "nested object should exist");
+   MCTF_ASSERT(pgexporter_json_contains_key(nested, "value"), cleanup, "should contain 'value' key");
+   MCTF_ASSERT(pgexporter_json_contains_key(nested, "string_value"), cleanup, "should contain 'string_value' key");
+   MCTF_ASSERT_INT_EQ((int)pgexporter_json_get(nested, "value"), 1, cleanup, "value should be 1");
+   MCTF_ASSERT_STR_EQ((char*)pgexporter_json_get(nested, "string_value"), "foreground", cleanup, "string_value should be 'foreground'");
+
+cleanup:
+   pgexporter_json_destroy(res);
+   MCTF_FINISH();
+}
+
+MCTF_TEST(test_configuration_json_put_time_value)
+{
+   struct json* res = NULL;
+   struct json* nested = NULL;
+
+   pgexporter_json_create(&res);
+
+   // Seconds
+   pgexporter_json_put_time_value(res, "idle_timeout", PGEXPORTER_TIME_SEC(30), FORMAT_TIME_S);
+
+   nested = (struct json*)pgexporter_json_get(res, "idle_timeout");
+   MCTF_ASSERT_PTR_NONNULL(nested, cleanup, "seconds: nested object should exist");
+
+   MCTF_ASSERT(pgexporter_json_contains_key(nested, "value"), cleanup, "seconds: should contain 'value' key");
+   MCTF_ASSERT(pgexporter_json_contains_key(nested, "string_value"), cleanup, "seconds: should contain 'string_value' key");
+
+   MCTF_ASSERT_INT_EQ((int)pgexporter_json_get(nested, "value"), 30, cleanup, "seconds: value should be 30");
+   MCTF_ASSERT_STR_EQ((char*)pgexporter_json_get(nested, "string_value"), "30s", cleanup, "seconds: string_value should be '30s'");
+
+   // Minutes
+   pgexporter_json_put_time_value(res, "blocking_timeout", PGEXPORTER_TIME_MIN(5), FORMAT_TIME_MIN);
+
+   nested = (struct json*)pgexporter_json_get(res, "blocking_timeout");
+   MCTF_ASSERT_PTR_NONNULL(nested, cleanup, "minutes: nested object should exist");
+
+   MCTF_ASSERT(pgexporter_json_contains_key(nested, "value"), cleanup, "minutes: should contain 'value' key");
+   MCTF_ASSERT(pgexporter_json_contains_key(nested, "string_value"), cleanup, "minutes: should contain 'string_value' key");
+
+   MCTF_ASSERT_INT_EQ((int)pgexporter_json_get(nested, "value"), 5, cleanup, "minutes: value should be 5");
+   MCTF_ASSERT_STR_EQ((char*)pgexporter_json_get(nested, "string_value"), "5m", cleanup, "minutes: string_value should be '5m'");
+
+cleanup:
+   pgexporter_json_destroy(res);
+   MCTF_FINISH();
+}
+
+MCTF_TEST(test_configuration_json_put_size_value)
+{
+   struct json* res = NULL;
+   struct json* nested = NULL;
+
+   pgexporter_json_create(&res);
+
+   pgexporter_json_put_size_value(res, "buffer_size", 1048576);
+
+   nested = (struct json*)pgexporter_json_get(res, "buffer_size");
+   MCTF_ASSERT_PTR_NONNULL(nested, cleanup, "nested object should exist");
+   MCTF_ASSERT(pgexporter_json_contains_key(nested, "value"), cleanup, "should contain 'value' key");
+   MCTF_ASSERT(pgexporter_json_contains_key(nested, "string_value"), cleanup, "should contain 'string_value' key");
+   MCTF_ASSERT_INT_EQ((int)pgexporter_json_get(nested, "value"), 1048576, cleanup, "value should be 1048576");
+   MCTF_ASSERT_STR_EQ((char*)pgexporter_json_get(nested, "string_value"), "1 MB", cleanup, "string_value should be '1 MB'");
+
+cleanup:
+   pgexporter_json_destroy(res);
    MCTF_FINISH();
 }

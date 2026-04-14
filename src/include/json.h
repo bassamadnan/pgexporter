@@ -36,6 +36,7 @@ extern "C" {
 /* pgexporter */
 #include <pgexporter.h>
 #include <deque.h>
+#include <utils.h>
 #include <value.h>
 
 /* System */
@@ -254,6 +255,38 @@ pgexporter_json_read_file(char* path, struct json** obj);
  */
 int
 pgexporter_json_write_file(char* path, struct json* obj);
+
+/**
+ * Put an enriched enum value into the json item as a nested object
+ * containing both the raw integer value and its string representation
+ * @param item The json item
+ * @param key The json key
+ * @param value The enum value
+ * @param to_string A function that converts the enum to a string representation
+ */
+void
+pgexporter_json_put_enum_value(struct json* item, char* key, int value, int (*to_string)(char*, int));
+
+/**
+ * Put an enriched time value into the json item as a nested object
+ * containing both the raw time value and its formatted string representation
+ * @param item The json item
+ * @param key The json key
+ * @param value The time value
+ * @param fmt The time format
+ */
+void
+pgexporter_json_put_time_value(struct json* item, char* key, pgexporter_time_t value, enum pgexporter_time_format_t fmt);
+
+/**
+ * Put an enriched size value into the json item as a nested object
+ * containing both the raw size value and its string representation
+ * @param item The json item
+ * @param key The json key
+ * @param value The size in bytes
+ */
+void
+pgexporter_json_put_size_value(struct json* item, char* key, uint64_t value);
 
 #ifdef __cplusplus
 }

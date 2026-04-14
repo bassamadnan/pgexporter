@@ -804,6 +804,86 @@ error:
    return 1;
 }
 
+void
+pgexporter_json_put_enum_value(struct json* item, char* key, int value, int (*to_string)(char*, int))
+{
+   struct json* nested = NULL;
+   char str[MISC_LENGTH];
+
+   memset(str, 0, sizeof(str));
+
+   if (pgexporter_json_create(&nested))
+   {
+      return;
+   }
+
+   pgexporter_json_put(nested, "value", (uintptr_t)value, ValueInt32);
+
+   if (!to_string(str, value))
+   {
+      pgexporter_json_put(nested, "string_value", (uintptr_t)str, ValueString);
+   }
+   else
+   {
+      pgexporter_json_put(nested, "string_value", (uintptr_t)"unknown", ValueString);
+   }
+
+   pgexporter_json_put(item, key, (uintptr_t)nested, ValueJSON);
+}
+
+void
+pgexporter_json_put_time_value(struct json* item, char* key, pgexporter_time_t value, enum pgexporter_time_format_t fmt)
+{
+   struct json* nested = NULL;
+   char* formatted = NULL;
+
+   if (pgexporter_json_create(&nested))
+   {
+      return;
+   }
+
+   pgexporter_json_put(nested, "value", (uintptr_t)pgexporter_time_convert(value, fmt), ValueInt64);
+
+   if (!pgexporter_time_format(value, fmt, &formatted) && formatted)
+   {
+      pgexporter_json_put(nested, "string_value", (uintptr_t)formatted, ValueString);
+      free(formatted);
+   }
+   else
+   {
+      pgexporter_json_put(nested, "string_value", (uintptr_t)"unknown", ValueString);
+   }
+
+   pgexporter_json_put(item, key, (uintptr_t)nested, ValueJSON);
+}
+
+void
+pgexporter_json_put_size_value(struct json* item, char* key, uint64_t value)
+{
+   struct json* nested = NULL;
+   char* formatted = NULL;
+
+   if (pgexporter_json_create(&nested))
+   {
+      return;
+   }
+
+   pgexporter_json_put(nested, "value", (uintptr_t)value, ValueUInt64);
+
+   formatted = pgexporter_bytes_to_string(value);
+   if (formatted)
+   {
+      pgexporter_json_put(nested, "string_value", (uintptr_t)formatted, ValueString);
+      free(formatted);
+   }
+   else
+   {
+      pgexporter_json_put(nested, "string_value", (uintptr_t)"unknown", ValueString);
+   }
+
+   pgexporter_json_put(item, key, (uintptr_t)nested, ValueJSON);
+}
+
 static bool
 type_allowed(enum value_type type)
 {
