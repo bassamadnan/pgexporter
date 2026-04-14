@@ -107,6 +107,13 @@ if (${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
 
   set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
 
+  if (SYSTEMD_FOUND)
+    add_compile_options(-DHAVE_SYSTEMD)
+
+    include_directories(${SYSTEMD_INCLUDE_DIRS})
+    link_libraries(${SYSTEMD_LIBRARIES})
+  endif()
+
   elseif (${CMAKE_SYSTEM_NAME} STREQUAL "Darwin")
   # macOS specific configuration
   add_compile_options(-DHAVE_DARWIN)
@@ -209,13 +216,6 @@ else()
     add_compile_options(-DHAVE_FREEBSD)
   endif()
 
-endif()
-
-if (SYSTEMD_FOUND)
-  add_compile_options(-DHAVE_SYSTEMD)
-
-  include_directories(${SYSTEMD_INCLUDE_DIRS})
-  link_libraries(${SYSTEMD_LIBRARIES})
 endif()
 
 #

@@ -101,7 +101,7 @@ static int create_pidfile(void);
 static void remove_pidfile(void);
 static int create_lockfile(int port);
 static void remove_lockfile(int port);
-static void shutdown_ports(void);
+static void shutdown_ports(bool remove);
 
 struct accept_io
 {
@@ -152,7 +152,7 @@ start_mgt(void)
 }
 
 static void
-shutdown_mgt(void)
+shutdown_mgt(bool remove)
 {
    struct configuration* config;
 
@@ -163,7 +163,10 @@ shutdown_mgt(void)
       ev_io_stop(main_loop, (struct ev_io*)&io_mgt);
       pgexporter_disconnect(unix_management_socket);
       errno = 0;
-      pgexporter_remove_unix_socket(config->unix_socket_dir, MAIN_UDS);
+      if (remove)
+      {
+         pgexporter_remove_unix_socket(config->unix_socket_dir, MAIN_UDS);
+      }
       errno = 0;
    }
 }
@@ -186,7 +189,7 @@ start_transfer(void)
 }
 
 static void
-shutdown_transfer(void)
+shutdown_transfer(bool remove)
 {
    struct configuration* config;
 
@@ -197,7 +200,10 @@ shutdown_transfer(void)
       ev_io_stop(main_loop, (struct ev_io*)&io_transfer);
       pgexporter_disconnect(unix_transfer_socket);
       errno = 0;
-      pgexporter_remove_unix_socket(config->unix_socket_dir, TRANSFER_UDS);
+      if (remove)
+      {
+         pgexporter_remove_unix_socket(config->unix_socket_dir, TRANSFER_UDS);
+      }
       errno = 0;
    }
 }
@@ -225,7 +231,7 @@ start_metrics(void)
 }
 
 static void
-shutdown_metrics(void)
+shutdown_metrics(bool remove __attribute__((unused)))
 {
    struct configuration* config;
 
@@ -265,7 +271,7 @@ start_console(void)
 }
 
 static void
-shutdown_console(void)
+shutdown_console(bool remove __attribute__((unused)))
 {
    struct configuration* config;
 
@@ -305,7 +311,7 @@ start_bridge(void)
 }
 
 static void
-shutdown_bridge(void)
+shutdown_bridge(bool remove __attribute__((unused)))
 {
    struct configuration* config;
 
@@ -345,7 +351,7 @@ start_bridge_json(void)
 }
 
 static void
-shutdown_bridge_json(void)
+shutdown_bridge_json(bool remove __attribute__((unused)))
 {
    struct configuration* config;
 
@@ -378,7 +384,7 @@ start_management(void)
 }
 
 static void
-shutdown_management(void)
+shutdown_management(bool remove __attribute__((unused)))
 {
    for (int i = 0; i < management_fds_length; i++)
    {
@@ -1425,21 +1431,21 @@ main(int argc, char** argv)
 
    pgexporter_close_connections();
 
-   shutdown_management();
+   shutdown_management(true);
    if (config->metrics != -1)
    {
-      shutdown_metrics();
-      shutdown_mgt();
-      shutdown_transfer();
+      shutdown_metrics(true);
+      shutdown_mgt(true);
+      shutdown_transfer(true);
    }
 
    if (config->bridge != -1)
    {
-      shutdown_bridge();
+      shutdown_bridge(true);
 
       if (config->bridge_json != -1)
       {
-         shutdown_bridge_json();
+         shutdown_bridge_json(true);
       }
    }
 
@@ -1527,7 +1533,7 @@ accept_mgt_cb(struct ev_loop* loop, struct ev_io* watcher, int revents)
       {
          pgexporter_log_warn("Restarting management due to: %s (%d)", strerror(errno), watcher->fd);
 
-         shutdown_mgt();
+         shutdown_mgt(false);
 
          if (pgexporter_bind_unix_socket(config->unix_socket_dir, MAIN_UDS, &unix_management_socket))
          {
@@ -1625,7 +1631,7 @@ accept_mgt_cb(struct ev_loop* loop, struct ev_io* watcher, int revents)
       {
          struct json* pyl = NULL;
 
-         shutdown_ports();
+         shutdown_ports(false);
 
          pgexporter_json_clone(payload, &pyl);
 
@@ -1651,7 +1657,7 @@ accept_mgt_cb(struct ev_loop* loop, struct ev_io* watcher, int revents)
       {
          struct json* pyl = NULL;
 
-         shutdown_ports();
+         shutdown_ports(false);
 
          pgexporter_json_clone(payload, &pyl);
 
@@ -1693,7 +1699,7 @@ accept_mgt_cb(struct ev_loop* loop, struct ev_io* watcher, int revents)
       {
          struct json* pyl = NULL;
 
-         shutdown_ports();
+         shutdown_ports(false);
 
          pgexporter_json_clone(payload, &pyl);
 
@@ -1719,7 +1725,7 @@ accept_mgt_cb(struct ev_loop* loop, struct ev_io* watcher, int revents)
       {
          struct json* pyl = NULL;
 
-         shutdown_ports();
+         shutdown_ports(false);
 
          pgexporter_json_clone(payload, &pyl);
 
@@ -1783,7 +1789,7 @@ accept_transfer_cb(struct ev_loop* loop __attribute__((unused)), struct ev_io* w
       {
          pgexporter_log_warn("Restarting transfer due to: %s (%d)", strerror(errno), watcher->fd);
 
-         shutdown_mgt();
+         shutdown_mgt(false);
 
          if (pgexporter_bind_unix_socket(config->unix_socket_dir, TRANSFER_UDS, &unix_transfer_socket))
          {
@@ -1855,7 +1861,7 @@ accept_metrics_cb(struct ev_loop* loop, struct ev_io* watcher, int revents)
       {
          pgexporter_log_warn("Restarting listening port due to: %s (%d)", strerror(errno), watcher->fd);
 
-         shutdown_metrics();
+         shutdown_metrics(false);
 
          free(metrics_fds);
          metrics_fds = NULL;
@@ -1899,7 +1905,7 @@ accept_metrics_cb(struct ev_loop* loop, struct ev_io* watcher, int revents)
       ev_loop_fork(loop);
 
       /* We are leaving the socket descriptor valid such that the client won't reuse it */
-      shutdown_ports();
+      shutdown_ports(false);
       if (strlen(config->metrics_cert_file) > 0 && strlen(config->metrics_key_file) > 0)
       {
          if (pgexporter_create_ssl_ctx(false, &ctx))
@@ -1960,7 +1966,7 @@ accept_console_cb(struct ev_loop* loop, struct ev_io* watcher, int revents)
       {
          pgexporter_log_warn("Restarting listening port due to: %s (%d)", strerror(errno), watcher->fd);
 
-         shutdown_console();
+         shutdown_console(false);
 
          free(console_fds);
          console_fds = NULL;
@@ -2003,7 +2009,7 @@ accept_console_cb(struct ev_loop* loop, struct ev_io* watcher, int revents)
    {
       ev_loop_fork(loop);
 
-      shutdown_ports();
+      shutdown_ports(false);
       pgexporter_set_proc_title(1, ai->argv, "console", NULL);
       pgexporter_console(0, client_fd);
    }
@@ -2048,7 +2054,7 @@ accept_bridge_cb(struct ev_loop* loop, struct ev_io* watcher, int revents)
       {
          pgexporter_log_warn("Restarting listening port due to: %s (%d)", strerror(errno), watcher->fd);
 
-         shutdown_bridge();
+         shutdown_bridge(false);
 
          free(bridge_fds);
          bridge_fds = NULL;
@@ -2092,7 +2098,7 @@ accept_bridge_cb(struct ev_loop* loop, struct ev_io* watcher, int revents)
       ev_loop_fork(loop);
 
       /* We are leaving the socket descriptor valid such that the client won't reuse it */
-      shutdown_ports();
+      shutdown_ports(false);
 
       pgexporter_set_proc_title(1, ai->argv, "bridge", NULL);
       pgexporter_bridge(client_fd);
@@ -2138,7 +2144,7 @@ accept_bridge_json_cb(struct ev_loop* loop, struct ev_io* watcher, int revents)
       {
          pgexporter_log_warn("Restarting listening port due to: %s (%d)", strerror(errno), watcher->fd);
 
-         shutdown_bridge_json();
+         shutdown_bridge_json(false);
 
          free(bridge_json_fds);
          bridge_json_fds = NULL;
@@ -2182,7 +2188,7 @@ accept_bridge_json_cb(struct ev_loop* loop, struct ev_io* watcher, int revents)
       ev_loop_fork(loop);
 
       /* We are leaving the socket descriptor valid such that the client won't reuse it */
-      shutdown_ports();
+      shutdown_ports(false);
 
       pgexporter_set_proc_title(1, ai->argv, "bridge_json", NULL);
       pgexporter_bridge_json(client_fd);
@@ -2228,7 +2234,7 @@ accept_management_cb(struct ev_loop* loop, struct ev_io* watcher, int revents)
       {
          pgexporter_log_warn("Restarting listening port due to: %s (%d)", strerror(errno), watcher->fd);
 
-         shutdown_management();
+         shutdown_management(false);
 
          free(management_fds);
          management_fds = NULL;
@@ -2268,7 +2274,7 @@ accept_management_cb(struct ev_loop* loop, struct ev_io* watcher, int revents)
       char* addr = strdup(address);
 
       ev_loop_fork(loop);
-      shutdown_ports();
+      shutdown_ports(false);
       /* We are leaving the socket descriptor valid such that the client won't reuse it */
       pgexporter_remote_management(client_fd, addr);
    }
@@ -2351,7 +2357,7 @@ reload_configuration(void)
 
    if (old_metrics != config->metrics)
    {
-      shutdown_metrics();
+      shutdown_metrics(false);
 
       free(metrics_fds);
       metrics_fds = NULL;
@@ -2383,7 +2389,7 @@ reload_configuration(void)
 
    if (old_console != config->console)
    {
-      shutdown_console();
+      shutdown_console(false);
 
       free(console_fds);
       console_fds = NULL;
@@ -2415,7 +2421,7 @@ reload_configuration(void)
 
    if (old_management != config->management)
    {
-      shutdown_management();
+      shutdown_management(false);
 
       free(management_fds);
       management_fds = NULL;
@@ -2553,7 +2559,7 @@ remove_lockfile(int port)
 }
 
 static void
-shutdown_ports(void)
+shutdown_ports(bool remove)
 {
    struct configuration* config;
 
@@ -2561,11 +2567,11 @@ shutdown_ports(void)
 
    if (config->metrics > 0)
    {
-      shutdown_metrics();
+      shutdown_metrics(remove);
    }
 
    if (config->management > 0)
    {
-      shutdown_management();
+      shutdown_management(remove);
    }
 }
