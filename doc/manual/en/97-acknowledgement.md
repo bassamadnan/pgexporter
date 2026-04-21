@@ -38,6 +38,7 @@ Zeyad Daowd <zeyaddaowd@yahoo.com>
 Ahmed Mordi <ahmed.m.hamada2003@gmail.com>
 Ashwani Kumar Kamal <ashwanikamal.im421@gmail.com>
 Frank Heikens <frank@elevarq.com>
+Sakshi Aggarwal <sakshiaggarwal2706@gmail.com>
 ```
 
 ## Committers
